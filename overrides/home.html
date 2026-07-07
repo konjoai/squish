@@ -567,7 +567,7 @@ body[data-md-color-scheme="default"] {
               <td class="hl"><span class="sq-best">43 ms &#x2736;</span></td>
             </tr>
             <tr>
-              <td>Full response &mdash; 4000-token prompt</td>
+              <td>Full response &mdash; 4000-token prompt (repeated)</td>
               <td style="color:#FF8888">37.5 s</td>
               <td>&mdash;</td>
               <td class="hl"><span class="sq-best">3.8 s &nbsp;9.8&times; &#x2736;</span></td>
@@ -637,8 +637,10 @@ body[data-md-color-scheme="default"] {
       </div>
       <p style="text-align:center;font-size:.78rem;color:var(--sq-muted);margin-top:16px">
         &#x2736; M3 16 GB, thermally controlled. Cold start: Qwen2.5-1.5B. Serving (decode, tail,
-        E2E, RAM): Qwen2.5-7B INT3 vs Ollama 0.30.7. Squish v9.34.8. On a loaded model, single-token
-        TTFT is comparable (Ollama 167 ms / Squish 192 ms) &mdash; Squish&#x2019;s edge is everywhere else.
+        E2E, RAM): Qwen2.5-7B INT3 vs Ollama 0.30.7. Squish v9.34.14. The 9.8&times; full-response
+        figure is the reuse ceiling for an exactly-repeated prompt; on completely unique prompts
+        Squish is still faster but by a smaller 1.15&ndash;1.32&times; margin. On a cold, genuinely unique
+        prompt, Squish leads TTFT too (Ollama 812 ms / Squish 800 ms at 75 tokens) &mdash; Squish leads across the board.
       </p>
     </div>
   </section>
