@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 940 600" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style type="text/css"><![CDATA[
+      @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+      .mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+      .serif{font-family:"Fraunces",Georgia,serif}
+    ]]></style>
+    <pattern id="grid" width="26" height="26" patternUnits="userSpaceOnUse">
+      <path d="M26 0 L0 0 0 26" fill="none" stroke="rgba(168,85,247,0.07)" stroke-width="1"/>
+    </pattern>
+    <marker id="aGreen" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#a855f7"/></marker>
+    <marker id="aAmber" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#f59e0b"/></marker>
+    <marker id="aLine" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#4c3575"/></marker>
+  </defs>
+
+  <rect x="0" y="0" width="940" height="600" fill="#000000"/>
+  <rect x="0" y="0" width="940" height="600" fill="url(#grid)"/>
+
+  <!-- header -->
+  <text x="40" y="30" class="mono" font-size="10.5" letter-spacing="3" fill="#9385b0">KONJO AI  /  SQUISH INFERENCE SERVER</text>
+  <text x="40" y="60" class="serif" font-size="27" font-weight="600" fill="#f8f6fc">How Squish runs on Apple Silicon</text>
+  <text x="40" y="82" class="mono" font-size="12.5" fill="#9385b0">One shared pool of memory: the weights, the cache, and the GPU all live in it.</text>
+
+  <!-- prompt entry (once per request, not animated: this is not a per-token event) -->
+  <rect x="406" y="98" width="150" height="38" rx="5" fill="rgba(10,5,20,0.5)" stroke="#2d1b4e"/>
+  <rect x="406" y="98" width="4" height="38" rx="2" fill="#9385b0"/>
+  <text x="481" y="122" class="mono" font-size="13.5" font-weight="600" fill="#f8f6fc" text-anchor="middle">Your prompt</text>
+  <path d="M481 136 L481 162" stroke="#4c3575" stroke-width="2" marker-end="url(#aLine)"/>
+
+  <!-- hardware frame -->
+  <rect x="40" y="166" width="624" height="312" rx="10" fill="rgba(10,5,20,0.3)" stroke="#2d1b4e" stroke-dasharray="4 3"/>
+  <rect x="52" y="158" width="250" height="16" fill="#000000"/>
+  <text x="56" y="170" class="mono" font-size="9.5" letter-spacing="2.5" fill="#9385b0">APPLE SILICON &#183; UNIFIED MEMORY</text>
+
+  <!-- GPU box, pulses briefly when the weight read arrives (compute happening) -->
+  <rect x="74" y="250" width="200" height="120" rx="6" fill="rgba(168,85,247,0.06)" stroke="rgba(168,85,247,0.5)">
+    <animate attributeName="stroke-width" dur="3s" repeatCount="indefinite" values="1;1;2.6;1;1" keyTimes="0;0.33;0.42;0.5;1"/>
+    <animate attributeName="fill" dur="3s" repeatCount="indefinite" values="rgba(168,85,247,0.06);rgba(168,85,247,0.06);rgba(168,85,247,0.16);rgba(168,85,247,0.06);rgba(168,85,247,0.06)" keyTimes="0;0.33;0.42;0.5;1"/>
+  </rect>
+  <text x="92" y="278" class="mono" font-size="11" font-weight="600" fill="#a855f7">GPU</text>
+  <text x="92" y="302" class="mono" font-size="15" font-weight="600" fill="#f8f6fc">The engine</text>
+  <text x="92" y="324" class="mono" font-size="11" fill="#9385b0">math on the</text>
+  <text x="92" y="340" class="mono" font-size="11" fill="#9385b0">compressed weights</text>
+
+  <!-- RAM box -->
+  <rect x="360" y="190" width="270" height="252" rx="6" fill="rgba(34,211,238,0.05)" stroke="rgba(34,211,238,0.45)"/>
+  <text x="376" y="214" class="mono" font-size="11" font-weight="600" fill="#22d3ee">Unified memory (RAM)</text>
+
+  <rect x="376" y="228" width="238" height="52" rx="4" fill="rgba(10,5,20,0.55)" stroke="#2d1b4e"/>
+  <text x="392" y="250" class="mono" font-size="12" fill="#d2c4ea">Quantized weights</text>
+  <text x="392" y="268" class="mono" font-size="10" fill="#9385b0">small (INT3), kept warm</text>
+
+  <!-- KV cache, flashes amber on eviction -->
+  <rect x="376" y="292" width="238" height="52" rx="4" fill="rgba(10,5,20,0.55)" stroke="#2d1b4e">
+    <animate attributeName="stroke" dur="9s" repeatCount="indefinite" values="#2d1b4e;#2d1b4e;#f59e0b;#2d1b4e;#2d1b4e" keyTimes="0;0.1;0.15;0.22;1"/>
+  </rect>
+  <text x="392" y="314" class="mono" font-size="12" fill="#d2c4ea">KV cache</text>
+  <text x="392" y="332" class="mono" font-size="10" fill="#9385b0">reuses seen work</text>
+
+  <!-- Scratch, flashes amber on eviction -->
+  <rect x="376" y="356" width="238" height="52" rx="4" fill="rgba(10,5,20,0.55)" stroke="#2d1b4e">
+    <animate attributeName="stroke" dur="9s" repeatCount="indefinite" values="#2d1b4e;#2d1b4e;#f59e0b;#2d1b4e;#2d1b4e" keyTimes="0;0.1;0.15;0.22;1"/>
+  </rect>
+  <text x="392" y="378" class="mono" font-size="12" fill="#d2c4ea">Scratch</text>
+  <text x="392" y="396" class="mono" font-size="10" fill="#9385b0">working buffers</text>
+
+  <!-- weights stream RAM -> GPU (static arrow + traveling pulse) -->
+  <path id="weightPath" d="M360 254 C322 254 318 300 276 300" fill="none" stroke="#a855f7" stroke-width="2" marker-end="url(#aGreen)"/>
+  <text x="174" y="212" class="mono" font-size="10.5" fill="#a855f7" text-anchor="middle">the full weight set,</text>
+  <text x="174" y="227" class="mono" font-size="10.5" fill="#a855f7" text-anchor="middle">moved every token</text>
+  <circle r="4.5" fill="#a855f7">
+    <animateMotion dur="3s" repeatCount="indefinite" keyPoints="0;0;1;1;1" keyTimes="0;0.02;0.33;0.35;1" path="M360 254 C322 254 318 300 276 300"/>
+    <animate attributeName="opacity" dur="3s" repeatCount="indefinite" values="0;1;1;0;0" keyTimes="0;0.02;0.33;0.35;1"/>
+  </circle>
+
+  <!-- prompt -> RAM entry -->
+  <path d="M481 162 L481 190" stroke="#4c3575" stroke-width="2" marker-end="url(#aLine)"/>
+
+  <!-- engine -> tokens (static arrow + traveling pulse) -->
+  <path d="M174 370 L174 506" stroke="#4c3575" stroke-width="2" marker-end="url(#aLine)"/>
+  <circle r="4.5" fill="#a855f7">
+    <animateMotion dur="3s" repeatCount="indefinite" keyPoints="0;0;1;1;1" keyTimes="0;0.46;0.78;0.8;1" path="M174 370 L174 506"/>
+    <animate attributeName="opacity" dur="3s" repeatCount="indefinite" values="0;1;1;0;0" keyTimes="0;0.46;0.78;0.8;1"/>
+  </circle>
+  <rect x="86" y="508" width="176" height="38" rx="5" fill="rgba(10,5,20,0.5)" stroke="#2d1b4e">
+    <animate attributeName="stroke" dur="3s" repeatCount="indefinite" values="#2d1b4e;#2d1b4e;#a855f7;#2d1b4e;#2d1b4e" keyTimes="0;0.77;0.8;0.86;1"/>
+  </rect>
+  <rect x="86" y="508" width="4" height="38" rx="2" fill="#9385b0"/>
+  <text x="174" y="532" class="mono" font-size="13.5" font-weight="600" fill="#f8f6fc" text-anchor="middle">Tokens stream back</text>
+
+  <!-- governor side panel -->
+  <rect x="700" y="190" width="200" height="252" rx="6" fill="rgba(245,158,11,0.06)" stroke="rgba(245,158,11,0.5)" stroke-dasharray="4 3"/>
+  <text x="716" y="214" class="mono" font-size="9.5" letter-spacing="2" fill="#f59e0b">RUNS IN THE BACKGROUND</text>
+  <text x="716" y="238" class="mono" font-size="14" font-weight="600" fill="#f8f6fc">Memory governor</text>
+  <text x="716" y="268" class="mono" font-size="11" fill="#9385b0">Watches memory in tiers:</text>
+  <text x="716" y="286" class="mono" font-size="11" fill="#9385b0">shrinks caches gently, then</text>
+  <text x="716" y="302" class="mono" font-size="11" fill="#d2c4ea">more aggressively under</text>
+  <text x="716" y="318" class="mono" font-size="11" fill="#9385b0">pressure. Rejects new work</text>
+  <text x="716" y="334" class="mono" font-size="11" fill="#9385b0">only if it gets severe.</text>
+  <text x="716" y="356" class="mono" font-size="11" fill="#9385b0">The weights stay resident.</text>
+
+  <!-- watches: slow continuous breathing pulse, this is always happening -->
+  <path d="M700 212 C672 212 660 205 634 205" fill="none" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#aAmber)">
+    <animate attributeName="opacity" dur="2.2s" repeatCount="indefinite" values="0.35;0.9;0.35"/>
+  </path>
+  <text x="666" y="199" class="mono" font-size="9" fill="#f59e0b" text-anchor="middle">watches</text>
+
+  <!-- evicts: rare, fires once every 9s, with a traveling pulse -->
+  <path id="evictKV" d="M700 318 C672 318 656 318 618 318" fill="none" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#aAmber)" opacity="0.85"/>
+  <text x="660" y="311" class="mono" font-size="9" fill="#f59e0b" text-anchor="middle">evicts</text>
+  <circle r="4" fill="#f59e0b">
+    <animateMotion dur="9s" repeatCount="indefinite" keyPoints="0;0;1;1;1" keyTimes="0;0.1;0.15;0.17;1" path="M700 318 C672 318 656 318 618 318"/>
+    <animate attributeName="opacity" dur="9s" repeatCount="indefinite" values="0;1;1;0;0" keyTimes="0;0.1;0.15;0.17;1"/>
+  </circle>
+
+  <path id="evictScratch" d="M700 382 C672 382 656 382 618 382" fill="none" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#aAmber)" opacity="0.85"/>
+  <text x="660" y="375" class="mono" font-size="9" fill="#f59e0b" text-anchor="middle">evicts</text>
+  <circle r="4" fill="#f59e0b">
+    <animateMotion dur="9s" repeatCount="indefinite" keyPoints="0;0;1;1;1" keyTimes="0;0.1;0.15;0.17;1" path="M700 382 C672 382 656 382 618 382"/>
+    <animate attributeName="opacity" dur="9s" repeatCount="indefinite" values="0;1;1;0;0" keyTimes="0;0.1;0.15;0.17;1"/>
+  </circle>
+
+  <!-- footer -->
+  <line x1="40" y1="564" x2="900" y2="564" stroke="#2d1b4e"/>
+  <text x="40" y="583" class="mono" font-size="10" fill="#9385b0">PLATFORM <tspan fill="#d2c4ea">Apple Silicon</tspan>   &#183;   MEMORY <tspan fill="#d2c4ea">unified</tspan>   &#183;   DEFAULT <tspan fill="#d2c4ea">INT3, KV fp16</tspan></text>
+</svg>
