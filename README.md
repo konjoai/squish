@@ -8,6 +8,8 @@
 
 Sub-second model loads. Beats Ollama on throughput, tail latency, and full-response time. One OpenAI/Ollama-compatible daemon — no cloud, no API keys, fully offline.
 
+Read more: [Local LLMs are finally fast enough](https://squish.run/blog/local-llm-fast-enough/).
+
 [![License: BUSL-1.1](https://img.shields.io/badge/license-BUSL--1.1-2563eb?logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAyYTEgMSAwIDAgMSAxIDF2MS4xOGw2LjI0IDEuNTZhMSAxIDAgMSAxLS40OCAxLjk0TDEzIDYuMjhWMTloNGExIDEgMCAxIDEgMCAySDdhMSAxIDAgMSAxIDAtMmg0VjYuMjhMNS4yNCA3LjY4YTEgMSAwIDEgMS0uNDgtMS45NEwxMSA0LjE4VjNhMSAxIDAgMCAxIDEtMXoiLz48cGF0aCBkPSJNNC44IDguMiAxLjYgMTQuNWEzLjIgMy4yIDAgMCAwIDYuNCAwTDQuOCA4LjJ6bTE0LjQgMC0zLjIgNi4zYTMuMiAzLjIgMCAwIDAgNi40IDBsLTMuMi02LjN6Ii8%2BPC9zdmc%2B&logoColor=white)](LICENSE)
 [![PyPI](https://img.shields.io/badge/PyPI-squish--ai-3775A9?logo=pypi&logoColor=white)](https://pypi.org/project/squish-ai/)
 [![Python](https://img.shields.io/badge/python-3.11--3.14-3776AB?logo=python&logoColor=white)](https://pypi.org/project/squish-ai/)
@@ -54,8 +56,6 @@ Sub-second model loads. Beats Ollama on throughput, tail latency, and full-respo
 ```
 
 Squish separates how a model's weights are *stored* from how they *run*. Store them compressed and Metal-native; map them straight into unified memory; skip the dtype-conversion pass that makes every other loader slow. The result: a model that's ready in **half a second**, served by a persistent daemon that out-decodes Ollama and never re-does work it's already done.
-
-Read more: [Local LLMs are finally fast enough](https://squish.run/blog/local-llm-fast-enough/).
 
 ---
 
