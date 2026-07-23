@@ -55,6 +55,8 @@ Sub-second model loads. Beats Ollama on throughput, tail latency, and full-respo
 
 Squish separates how a model's weights are *stored* from how they *run*. Store them compressed and Metal-native; map them straight into unified memory; skip the dtype-conversion pass that makes every other loader slow. The result: a model that's ready in **half a second**, served by a persistent daemon that out-decodes Ollama and never re-does work it's already done.
 
+Read more: [Local LLMs are finally fast enough](https://squish.run/blog/local-llm-fast-enough/).
+
 ---
 
 ## The Numbers
