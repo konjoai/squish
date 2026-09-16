@@ -464,11 +464,45 @@
     box-shadow: 0 6px 0 #E0AB00;
   }
   .footer-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 22px; margin: 34px 0 14px; font-weight: 700; font-size: 14px; }
-  .footer-links a { color: #C9B2E8; text-decoration: none; }
+  .footer-links a, .footer-links button {
+    color: #C9B2E8; text-decoration: none; background: none; border: none;
+    padding: 0; font: inherit; cursor: pointer;
+  }
   /* #9C86BE (the prototype's exact value) contrasts at 4.27:1 on this
      background, just under WCAG AA's 4.5:1 for normal-weight text.
      Lightened a hair to #A08CC1 (4.57:1); visually indistinguishable. */
   .footer-copy { margin: 0; font-size: 13px; color: #A08CC1; }
+
+  /* ============ contact modal ============ */
+  .contact-overlay {
+    position: fixed; inset: 0; z-index: 200; display: flex; align-items: center;
+    justify-content: center; padding: 24px; background: rgba(43,20,66,.55);
+  }
+  .contact-overlay[hidden] { display: none; }
+  .contact-modal {
+    position: relative; width: 100%; max-width: 480px; max-height: 88vh; overflow-y: auto;
+    background: #fff; border-radius: 28px; padding: 40px 32px 32px;
+    box-shadow: 0 30px 60px rgba(43,20,66,.35); text-align: center;
+  }
+  .contact-modal-close {
+    position: absolute; top: 14px; right: 14px; width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; background: #F4EAFF;
+    color: #5A2794; border: none; cursor: pointer; transition: transform .18s ease, background-color .18s ease;
+  }
+  .contact-modal-close:hover { transform: translateY(-3px); background: #E6D6FA; }
+  .contact-heading { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: clamp(24px,3vw,30px); color: #39205C; margin: 0 0 8px; }
+  .contact-lead { margin: 0 0 24px; font-size: 15px; font-weight: 600; color: #6B5580; }
+  .contact-form { display: flex; flex-direction: column; gap: 14px; }
+  .contact-field { display: flex; flex-direction: column; gap: 6px; text-align: left; }
+  .contact-field label { font-weight: 700; font-size: 13px; color: #4B2D6F; }
+  .contact-input, .contact-textarea {
+    font-family: 'Nunito', sans-serif; font-size: 16px; font-weight: 600; width: 100%;
+    padding: 14px 16px; border-radius: 14px; border: 3px solid rgba(75,45,111,.2);
+    background: #FBF8FF; color: #3B2352;
+  }
+  .contact-textarea { resize: vertical; min-height: 110px; }
+  .contact-input:focus-visible, .contact-textarea:focus-visible { outline: 3px solid #5A2794; outline-offset: 2px; }
+  .contact-form .submit-btn { margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -1231,9 +1265,39 @@
     <a href="#reading-order">Reading Order</a>
     <a href="#printables">Free Printables</a>
     <a href="#about">About</a>
+    <button type="button" id="contact-open">Contact</button>
   </div>
   <p class="footer-copy">© <span id="footer-year"></span> Konjo Publishing. Learning with Squish.</p>
 </footer>
+
+<div class="contact-overlay" id="contact-overlay" hidden>
+  <div class="contact-modal" role="dialog" aria-modal="true" aria-labelledby="contact-heading">
+    <button type="button" class="contact-modal-close" id="contact-close" aria-label="Close contact form">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><line x1="5" y1="5" x2="19" y2="19"></line><line x1="19" y1="5" x2="5" y2="19"></line></svg>
+    </button>
+    <h2 class="contact-heading" id="contact-heading">Get in touch</h2>
+    <p class="contact-lead">Questions, feedback, or just want to say hi? Send a message and I'll get back to you.</p>
+
+    <form class="contact-form" id="contact-form" novalidate>
+      <div class="contact-field">
+        <label for="contact-name">Name</label>
+        <input type="text" id="contact-name" name="name" required autocomplete="name" class="contact-input">
+      </div>
+      <div class="contact-field">
+        <label for="contact-email">Email address</label>
+        <input type="email" id="contact-email" name="email" required placeholder="you@example.com" autocomplete="email" class="contact-input">
+      </div>
+      <div class="contact-field">
+        <label for="contact-message">Message</label>
+        <textarea id="contact-message" name="message" required class="contact-textarea"></textarea>
+      </div>
+      <button type="submit" class="submit-btn" id="contact-submit-button">Send message</button>
+    </form>
+
+    <p class="form-error" id="contact-error" role="alert" hidden></p>
+    <p class="form-success" id="contact-success" role="status" hidden></p>
+  </div>
+</div>
 
 </div>
 
@@ -1383,8 +1447,8 @@
     // ---------------------------------------------------------------
     // Printables signup: posts straight to FormSubmit.co (this site is
     // static GitHub Pages hosting, no serverless backend), which emails
-    // the submission to wes@squish.run. A failed request surfaces a
-    // real error instead of a fake success (Konjo: no silent failures).
+    // the submission to wesleyscholl@gmail.com. A failed request surfaces
+    // a real error instead of a fake success (Konjo: no silent failures).
     // ---------------------------------------------------------------
     var EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     var form = document.getElementById("subscribe-form");
@@ -1426,7 +1490,7 @@
       submitButton.disabled = true;
       submitButton.textContent = "Sending...";
 
-      fetch("https://formsubmit.co/ajax/wes@squish.run", {
+      fetch("https://formsubmit.co/ajax/wesleyscholl@gmail.com", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Accept": "application/json" },
         body: JSON.stringify({
@@ -1457,6 +1521,118 @@
           submitButton.textContent = "Send me the printables";
         });
     });
+
+    // ---------------------------------------------------------------
+    // Contact modal: opens from the footer "Contact" button, closes on
+    // the close button, Escape, or a click on the backdrop. The form
+    // posts to FormSubmit.co the same way the printables signup does.
+    // ---------------------------------------------------------------
+    var contactOverlay = document.getElementById("contact-overlay");
+    var contactOpenBtn = document.getElementById("contact-open");
+    var contactCloseBtn = document.getElementById("contact-close");
+    var contactForm = document.getElementById("contact-form");
+    var contactNameInput = document.getElementById("contact-name");
+    var contactEmailInput = document.getElementById("contact-email");
+    var contactMessageInput = document.getElementById("contact-message");
+    var contactSubmitButton = document.getElementById("contact-submit-button");
+    var contactErrorEl = document.getElementById("contact-error");
+    var contactSuccessEl = document.getElementById("contact-success");
+
+    function openContactModal() {
+      contactOverlay.hidden = false;
+      contactNameInput.focus();
+    }
+
+    function closeContactModal() {
+      contactOverlay.hidden = true;
+    }
+
+    if (contactOpenBtn && contactOverlay) {
+      contactOpenBtn.addEventListener("click", openContactModal);
+      contactCloseBtn.addEventListener("click", closeContactModal);
+      contactOverlay.addEventListener("click", function (event) {
+        if (event.target === contactOverlay) closeContactModal();
+      });
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && !contactOverlay.hidden) closeContactModal();
+      });
+
+      function showContactError(message) {
+        contactErrorEl.textContent = message;
+        contactErrorEl.hidden = false;
+      }
+
+      function clearContactError() {
+        contactErrorEl.textContent = "";
+        contactErrorEl.hidden = true;
+      }
+
+      function showContactSuccess() {
+        contactForm.hidden = true;
+        contactSuccessEl.textContent = "Thanks for reaching out! I'll get back to you soon.";
+        contactSuccessEl.hidden = false;
+      }
+
+      contactForm.addEventListener("submit", function (event) {
+        event.preventDefault();
+        clearContactError();
+
+        var name = contactNameInput.value.trim();
+        var email = contactEmailInput.value.trim();
+        var message = contactMessageInput.value.trim();
+
+        if (!name) {
+          showContactError("Please enter your name.");
+          contactNameInput.focus();
+          return;
+        }
+        if (!EMAIL_PATTERN.test(email)) {
+          showContactError("Please enter a valid email address.");
+          contactEmailInput.focus();
+          return;
+        }
+        if (!message) {
+          showContactError("Please enter a message.");
+          contactMessageInput.focus();
+          return;
+        }
+
+        contactSubmitButton.disabled = true;
+        contactSubmitButton.textContent = "Sending...";
+
+        fetch("https://formsubmit.co/ajax/wesleyscholl@gmail.com", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
+          body: JSON.stringify({
+            name: name,
+            email: email,
+            message: message,
+            _subject: "New contact message from Learning with Squish",
+            _captcha: "false"
+          })
+        })
+          .then(function (response) {
+            if (!response.ok) {
+              throw new Error("Contact request failed with status " + response.status);
+            }
+            return response.json();
+          })
+          .then(function (data) {
+            if (!data || data.success !== "true") {
+              throw new Error("formsubmit.co reported failure: " + (data && data.message));
+            }
+            showContactSuccess();
+          })
+          .catch(function (err) {
+            console.error("[squish.run/books] contact formsubmit.co request failed:", err);
+            showContactError("Something went wrong. Please try again in a moment.");
+          })
+          .finally(function () {
+            contactSubmitButton.disabled = false;
+            contactSubmitButton.textContent = "Send message";
+          });
+      });
+    }
   })();
 </script>
 
