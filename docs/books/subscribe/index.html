@@ -94,7 +94,7 @@
   (function () {
     // Google Apps Script web app URL (ends in /exec). See ../tools/subscribe-apps-script.gs.
     // Empty = fall back to emailing the sign-up through formsubmit.co.
-    var SHEET_ENDPOINT = "";
+    var SHEET_ENDPOINT = "https://script.google.com/macros/s/AKfycbxqoJqZ8XiZ5y785j-FrOdQO3_JOtBi8zBR8ZiPrtskLzzwtipWLAi57LU75yA5hLvG9A/exec";
     var EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     document.getElementById("year").textContent = new Date().getFullYear();
