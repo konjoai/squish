@@ -145,6 +145,9 @@
     font-size: 15px; color: #3B1F5C; background: #FFD34D; padding: 11px 24px;
     border-radius: 999px; box-shadow: 0 5px 0 #E0AB00;
   }
+  .nav-cta.nav-cta--join, .footer-cta.footer-cta--join { background: #fff; color: #5A2794; box-shadow: 0 5px 0 #C9B3EA; border: 2px solid #C9B3EA; }
+  .nav-cta.nav-cta--join:hover, .footer-cta.footer-cta--join:hover { background-color: #F3EAFD; }
+  .footer-ctas { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; }
   .progress-track { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; }
   .progress-bar {
     height: 100%; width: 0%;
@@ -452,10 +455,6 @@
   .form-success { margin: 18px 0 0; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 17px; color: #2A7A5E; }
   .printable-link { display: inline-block; margin-top: 8px; color: #2A7A5E; text-decoration: underline; }
   .form-error { margin: 14px 0 0; font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 15px; color: #B3261E; }
-  .email-input--name { flex-basis: 180px; max-width: 220px; }
-  .hp-field { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
-  .consent-row { flex-basis: 100%; display: flex; gap: 8px; align-items: flex-start; justify-content: center; font-size: 14px; font-weight: 700; color: #4B2D6F; text-align: left; max-width: 560px; margin: 0 auto; }
-  .consent-row input { width: 18px; height: 18px; margin-top: 2px; flex: none; accent-color: #5A2794; }
   .privacy-note { margin: 16px 0 0; font-size: 13px; font-weight: 600; color: #6B5580; }
 
   /* ============ final CTA + footer ============ */
@@ -677,6 +676,7 @@
       <a href="#reading-order" class="nav-link">Reading Order</a>
       <a href="#printables" class="nav-link">Free Printables</a>
       <a href="#about" class="nav-link">About</a>
+      <a href="subscribe/" class="nav-cta nav-cta--join">Join the Squish List</a>
       <a href="#books" class="nav-cta">Shop Now</a>
     </nav>
   </div>
@@ -1475,20 +1475,16 @@
         <p class="printables-lead">Printable coloring pages of Squish and Lilyan, perfect for a rainy afternoon, straight to your inbox.</p>
 
         <form class="email-form" id="subscribe-form" novalidate>
-          <label class="email-form-label" for="name-input">First name</label>
-          <input type="text" id="name-input" name="firstName" placeholder="First name" autocomplete="given-name" maxlength="80" class="email-input email-input--name">
           <label class="email-form-label" for="email-input">Email address</label>
           <input type="email" id="email-input" name="email" required placeholder="you@example.com" autocomplete="email" aria-describedby="email-error" class="email-input">
           <input type="hidden" id="src-input" name="src" value="">
-          <div class="hp-field" aria-hidden="true"><label for="website-input">Website</label><input type="text" id="website-input" name="website" tabindex="-1" autocomplete="off"></div>
-          <label class="consent-row" for="consent-input"><input type="checkbox" id="consent-input" name="consent"> I'm a grown-up (18+) and I'd like emails about free printables and new Squish books.</label>
           <button type="submit" class="submit-btn" id="submit-button">Send me the printables</button>
         </form>
 
         <p class="form-error" id="email-error" role="alert" hidden></p>
         <p class="form-success" id="form-success" role="status" hidden></p>
 
-        <p class="privacy-note">For parents and grown-ups. No spam, ever. Unsubscribe anytime.</p>
+        <p class="privacy-note">No spam, ever. Unsubscribe anytime.</p>
       </div>
       <figure class="printables-sample-figure">
         <span class="printables-tape" aria-hidden="true"></span>
@@ -1503,7 +1499,10 @@
 <footer class="site-footer">
   <img src="assets/squish-mascot-hello.png" alt="" class="footer-mascot" width="500" height="500" loading="lazy" decoding="async">
   <h2 class="footer-heading">Start the series tonight.</h2>
-  <a href="#books" class="footer-cta">Get the books</a>
+  <div class="footer-ctas">
+    <a href="#books" class="footer-cta">Get the books</a>
+    <a href="subscribe/" class="footer-cta footer-cta--join">Join the Squish List</a>
+  </div>
   <div class="footer-links">
     <a href="#books">Books</a>
     <a href="#reading-order">Reading Order</a>
@@ -1695,13 +1694,7 @@
     // a real error instead of a fake success (Konjo: no silent failures).
     // ---------------------------------------------------------------
     var EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    // Paste the Google Apps Script web app URL (ends in /exec) here.
-    // See tools/subscribe-apps-script.gs. Empty = formsubmit.co email fallback.
-    var SHEET_ENDPOINT = "";
     var form = document.getElementById("subscribe-form");
-    var nameInput = document.getElementById("name-input");
-    var consentInput = document.getElementById("consent-input");
-    var websiteInput = document.getElementById("website-input");
     var emailInput = document.getElementById("email-input");
     var submitButton = document.getElementById("submit-button");
     var errorEl = document.getElementById("email-error");
@@ -1736,51 +1729,34 @@
         emailInput.focus();
         return;
       }
-      if (!consentInput.checked) {
-        showError("Please tick the box to confirm you're a grown-up and want the emails.");
-        consentInput.focus();
-        return;
-      }
 
       submitButton.disabled = true;
       submitButton.textContent = "Sending...";
 
-      var payload = {
-        firstName: nameInput.value.trim(),
-        email: email,
-        src: srcInput.value || "(none)",
-        page: window.location.href,
-        consent: true,
-        website: websiteInput.value
-      };
-      var request = SHEET_ENDPOINT
-        // Google Apps Script web app: text/plain avoids a CORS preflight.
-        ? fetch(SHEET_ENDPOINT, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) })
-            .then(function (response) {
-              if (!response.ok) { throw new Error("Subscribe request failed with status " + response.status); }
-              return response.json();
-            })
-            .then(function (data) {
-              if (!data || data.ok !== true) { throw new Error("Sheet endpoint reported failure: " + (data && data.error)); }
-            })
-        // Fallback until the Apps Script URL is set: email via formsubmit.co.
-        : fetch("https://formsubmit.co/ajax/wesleyscholl@gmail.com", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "Accept": "application/json" },
-            body: JSON.stringify({ name: payload.firstName, email: email, src: payload.src, _subject: "New Learning with Squish signup", _captcha: "false", _honey: payload.website })
-          })
-            .then(function (response) {
-              if (!response.ok) { throw new Error("Subscribe request failed with status " + response.status); }
-              return response.json();
-            })
-            .then(function (data) {
-              if (!data || data.success !== "true") { throw new Error("formsubmit.co reported failure: " + (data && data.message)); }
-            });
-
-      request
-        .then(function () { showSuccess(); })
+      fetch("https://formsubmit.co/ajax/wesleyscholl@gmail.com", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({
+          email: email,
+          src: srcInput.value || "(none)",
+          _subject: "New Learning with Squish signup",
+          _captcha: "false"
+        })
+      })
+        .then(function (response) {
+          if (!response.ok) {
+            throw new Error("Subscribe request failed with status " + response.status);
+          }
+          return response.json();
+        })
+        .then(function (data) {
+          if (!data || data.success !== "true") {
+            throw new Error("formsubmit.co reported failure: " + (data && data.message));
+          }
+          showSuccess();
+        })
         .catch(function (err) {
-          console.error("[squish.run/books] subscribe request failed:", err);
+          console.error("[squish.run/books] formsubmit.co request failed:", err);
           showError("Something went wrong. Please try again in a moment.");
         })
         .finally(function () {

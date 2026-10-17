@@ -10,7 +10,7 @@
  *   3. Deploy > New deployment > type "Web app".
  *      Execute as: Me.  Who has access: Anyone.  Click Deploy and allow access.
  *   4. Copy the Web app URL (ends in /exec) and paste it into
- *      SHEET_ENDPOINT in docs/books/index.html.
+ *      SHEET_ENDPOINT in docs/books/subscribe/index.html.
  * After editing this script later: Deploy > Manage deployments > Edit > New version.
  */
 

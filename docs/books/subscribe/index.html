@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Join the Squish List | Learning with Squish</title>
+<meta name="description" content="Join the Learning with Squish email list for new Squish books, free printables and local storytime dates. For parents and grown-ups." />
+<link rel="icon" type="image/png" href="../assets/favicon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; font-family: 'Nunito', sans-serif; color: #3B2352; line-height: 1.5;
+    background: linear-gradient(135deg, #FFF3D6 0%, #F3E6FF 45%, #E0F0FF 100%);
+    display: flex; flex-direction: column;
+  }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 20px; max-width: 980px; width: 100%; margin: 0 auto; }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: #4B2D6F; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 18px; }
+  .brand img { width: 36px; height: 36px; object-fit: contain; }
+  .back { font-weight: 800; color: #5A2794; text-decoration: none; font-size: 15px; }
+  main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 16px 16px 48px; }
+  .card {
+    width: 100%; max-width: 520px; background: #fff; border-radius: 28px; padding: 32px 26px 28px;
+    box-shadow: 0 18px 40px rgba(90,39,148,.16); border: 3px solid #E6D6FA; text-align: center;
+  }
+  .mascot { width: 110px; height: auto; margin: -78px auto 6px; display: block; }
+  h1 { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: clamp(30px, 6vw, 40px); line-height: 1.05; color: #39205C; margin: 0 0 10px; }
+  .lead { margin: 0 0 18px; font-weight: 700; color: #6B5580; font-size: 16px; }
+  ul.perks { list-style: none; padding: 0; margin: 0 0 22px; text-align: left; display: grid; gap: 8px; }
+  ul.perks li { font-weight: 700; font-size: 15px; color: #4B2D6F; padding-left: 28px; position: relative; }
+  ul.perks li::before { content: ""; position: absolute; left: 4px; top: 6px; width: 12px; height: 12px; border-radius: 4px; background: #8B5FBF; }
+  form { display: grid; gap: 12px; text-align: left; }
+  label.field { display: grid; gap: 6px; font-weight: 800; font-size: 14px; color: #4B2D6F; }
+  input[type=text], input[type=email] {
+    width: 100%; font-family: 'Nunito', sans-serif; font-size: 16px; font-weight: 600; padding: 14px 16px;
+    border-radius: 14px; border: 3px solid rgba(75,45,111,.2); background: #fff; color: #3B2352;
+  }
+  input:focus-visible { outline: 3px solid #5A2794; outline-offset: 2px; }
+  .consent { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; font-weight: 700; color: #4B2D6F; }
+  .consent input { width: 20px; height: 20px; margin-top: 1px; flex: none; accent-color: #5A2794; }
+  .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+  button {
+    font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 18px; color: #3B1F5C; background: #FFD34D;
+    border: none; padding: 15px 24px; border-radius: 14px; box-shadow: 0 6px 0 #E0AB00; cursor: pointer; margin-top: 4px;
+  }
+  button:disabled { opacity: .7; cursor: default; }
+  .error { margin: 12px 0 0; font-weight: 800; color: #B3261E; }
+  .success { margin: 6px 0 0; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 20px; color: #2A7A5E; }
+  .success a { color: #5A2794; }
+  .fine { margin: 16px 0 0; font-size: 13px; font-weight: 600; color: #6B5580; }
+  footer { text-align: center; padding: 18px 16px 28px; font-size: 13px; color: #6B5580; }
+  footer a { color: #5A2794; font-weight: 800; }
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="../"><img src="../assets/favicon.png" alt="" width="36" height="36">Learning with Squish</a>
+  <a class="back" href="../#books">See the books</a>
+</header>
+
+<main>
+  <div class="card">
+    <img class="mascot" src="../assets/squish-mascot-hello.png" alt="" width="500" height="500">
+    <h1>Join the Squish List</h1>
+    <p class="lead">A short, friendly email when something new is ready for your little one.</p>
+    <ul class="perks">
+      <li>New Squish books as soon as they come out</li>
+      <li>Free printable coloring pages</li>
+      <li>Local storytimes and events around Alexandria and the DC area</li>
+    </ul>
+
+    <form id="join-form" novalidate>
+      <label class="field" for="first-name">First name
+        <input type="text" id="first-name" name="firstName" autocomplete="given-name" maxlength="80" placeholder="Your first name">
+      </label>
+      <label class="field" for="email">Email
+        <input type="email" id="email" name="email" required autocomplete="email" maxlength="200" placeholder="you@example.com">
+      </label>
+      <div class="hp" aria-hidden="true"><label for="website">Website</label><input type="text" id="website" name="website" tabindex="-1" autocomplete="off"></div>
+      <label class="consent" for="consent"><input type="checkbox" id="consent" name="consent"> I'm a grown-up (18+) and I'd like emails from Learning with Squish. I can unsubscribe anytime.</label>
+      <button type="submit" id="join-button">Join the list</button>
+    </form>
+    <p class="error" id="join-error" role="alert" hidden></p>
+    <p class="success" id="join-success" role="status" hidden></p>
+    <p class="fine">For parents and grown-ups only. We never share your email.</p>
+  </div>
+</main>
+
+<footer>© <span id="year"></span> Konjo Publishing · <a href="../">squish.run/books</a></footer>
+
+<script>
+  (function () {
+    // Google Apps Script web app URL (ends in /exec). See ../tools/subscribe-apps-script.gs.
+    // Empty = fall back to emailing the sign-up through formsubmit.co.
+    var SHEET_ENDPOINT = "";
+    var EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    document.getElementById("year").textContent = new Date().getFullYear();
+    var form = document.getElementById("join-form");
+    var nameInput = document.getElementById("first-name");
+    var emailInput = document.getElementById("email");
+    var consentInput = document.getElementById("consent");
+    var websiteInput = document.getElementById("website");
+    var button = document.getElementById("join-button");
+    var errorEl = document.getElementById("join-error");
+    var successEl = document.getElementById("join-success");
+    var src = new URLSearchParams(window.location.search).get("src") || "(none)";
+
+    function showError(msg) { errorEl.textContent = msg; errorEl.hidden = false; }
+
+    function send(payload) {
+      if (SHEET_ENDPOINT) {
+        // text/plain avoids a CORS preflight, which Apps Script cannot answer.
+        return fetch(SHEET_ENDPOINT, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) })
+          .then(function (r) { if (!r.ok) { throw new Error("status " + r.status); } return r.json(); })
+          .then(function (d) { if (!d || d.ok !== true) { throw new Error("sheet endpoint: " + (d && d.error)); } });
+      }
+      return fetch("https://formsubmit.co/ajax/wesleyscholl@gmail.com", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ name: payload.firstName, email: payload.email, src: payload.src, _subject: "New Squish List subscriber", _captcha: "false", _honey: payload.website })
+      })
+        .then(function (r) { if (!r.ok) { throw new Error("status " + r.status); } return r.json(); })
+        .then(function (d) { if (!d || d.success !== "true") { throw new Error("formsubmit: " + (d && d.message)); } });
+    }
+
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      errorEl.hidden = true;
+      var email = emailInput.value.trim();
+      if (!EMAIL_PATTERN.test(email)) { showError("Please enter a valid email address."); emailInput.focus(); return; }
+      if (!consentInput.checked) { showError("Please tick the box to confirm you're a grown-up and want the emails."); consentInput.focus(); return; }
+
+      button.disabled = true;
+      button.textContent = "Joining...";
+      send({ firstName: nameInput.value.trim(), email: email, src: src, page: window.location.href, consent: true, website: websiteInput.value })
+        .then(function () {
+          form.hidden = true;
+          var name = nameInput.value.trim();
+          successEl.innerHTML = "You're on the list" + (name ? ", " + name.replace(/[<>&"]/g, "") : "") + "! " +
+            '<br><a href="../#printables">Grab the free coloring pages</a>';
+          successEl.hidden = false;
+        })
+        .catch(function (err) {
+          console.error("[squish.run/books/subscribe] sign-up failed:", err);
+          showError("Something went wrong. Please try again in a moment.");
+        })
+        .finally(function () { button.disabled = false; button.textContent = "Join the list"; });
+    });
+  })();
+</script>
+</body>
+</html>
