@@ -287,6 +287,7 @@
   .book-meta-sep { opacity: .4; }
   .book-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .book-price { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 20px; color: #5A2794; }
+  .book-buy-btn.is-soon { opacity: .6; cursor: default; pointer-events: none; }
   .book-buy-btn {
     font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 15px; text-decoration: none;
     color: #3B1F5C; background: #FFD34D; padding: 11px 22px; border-radius: 999px; box-shadow: 0 5px 0 #E0AB00;
@@ -955,6 +956,23 @@
           <div class="book-footer">
             <span class="book-price">$0.99</span>
             <a href="https://www.amazon.com/dp/B0HN6KVQ1K" target="_blank" rel="noopener" class="book-buy-btn">Buy on Amazon</a>
+          </div>
+        </article>
+        <article data-reveal class="book-card">
+          <div class="book-cover-wrap">
+            <img src="assets/covers/christmas.jpg" alt="Learning the 12 Days of Christmas with Squish cover" class="book-cover-img" width="900" height="900" loading="lazy" decoding="async">
+            <span class="book-badge">Coming soon</span>
+          </div>
+          <h3 class="book-title">Learning the 12 Days of Christmas with Squish</h3>
+          <p class="book-desc">Sing and count along with Lilyan and Squish, from one star on top of the tree to twelve bells a-ringing. But on Christmas morning, Squish's present for Lilyan is empty. What will Squish give her now?</p>
+          <div class="book-meta">
+            <span class="book-meta-label">Teaches</span><span>Counting 1 to 12</span>
+            <span class="book-meta-sep">·</span>
+            <span class="book-meta-label">Length</span><span>40 pages</span>
+          </div>
+          <div class="book-footer">
+            <span class="book-price">Coming soon</span>
+            <span class="book-buy-btn is-soon" aria-disabled="true">Coming soon</span>
           </div>
         </article>
       </div>
