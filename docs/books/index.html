@@ -294,7 +294,16 @@
   }
 
   /* ============ holidays ============ */
-  .holiday-section { background: linear-gradient(180deg,#2A2D5C 0%,#1C1A40 100%); padding: 100px 0; color: #FDF4E4; }
+  .holiday-section { position: relative; overflow: hidden; background: linear-gradient(180deg,#2A2D5C 0%,#1C1A40 100%); padding: 100px 0 240px; color: #FDF4E4; }
+  .holiday-container { position: relative; z-index: 1; }
+  .holiday-char { position: absolute; z-index: 0; height: auto; pointer-events: none; filter: drop-shadow(0 10px 18px rgba(0,0,0,.35)); }
+  .holiday-char--squish { top: 18px; left: max(8px, calc(50% - 640px)); width: 220px; transform: rotate(-6deg); }
+  .holiday-char--lilyan { bottom: 0; right: max(8px, calc(50% - 640px)); width: 170px; }
+  @media (max-width: 860px) {
+    .holiday-section { padding: 150px 0 210px; }
+    .holiday-char--squish { top: 10px; left: 50%; width: 150px; transform: translateX(-50%) rotate(-4deg); }
+    .holiday-char--lilyan { right: 50%; width: 140px; transform: translateX(50%); }
+  }
   .holiday-container { max-width: 1160px; margin: 0 auto; padding: 0 28px; }
   .holiday-head { text-align: center; margin-bottom: 40px; }
   .eyebrow--holiday { background: #FFD34D; color: #34205A; }
@@ -408,7 +417,10 @@
   .faq-container { max-width: 860px; margin: 0 auto; padding: 0 28px; }
   .faq-heading { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: clamp(30px,3.6vw,46px); line-height: 1.04; color: #5A3A16; margin: 0 0 30px; text-align: center; }
   .faq-list { display: flex; flex-direction: column; gap: 12px; }
-  .faq-item { background: #fff; border-radius: 20px; padding: 24px 28px; box-shadow: 0 8px 20px rgba(90,58,22,.08); }
+  .faq-item { display: grid; grid-template-columns: 46px 1fr; column-gap: 16px; align-items: start; background: #fff; border-radius: 20px; padding: 24px 28px; box-shadow: 0 8px 20px rgba(90,58,22,.08); }
+  .faq-icon-chip { grid-row: span 2; width: 46px; height: 46px; background: #F3E8FF; color: #7B3FBF; }
+  .faq-question, .faq-answer { grid-column: 2; }
+  @media (max-width: 560px) { .faq-item { grid-template-columns: 36px 1fr; column-gap: 12px; padding: 20px; } .faq-icon-chip { width: 36px; height: 36px; } }
   .faq-question { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 17.5px; color: #5A2794; margin: 0 0 6px; }
   .faq-answer { margin: 0; font-size: 16px; font-weight: 600; color: #5C4A3C; }
 
@@ -768,7 +780,7 @@
         <div class="friend-card friend-card--squish">
           <img src="assets/squish-mascot.png" alt="Squish, a happy purple cube character" class="friend-avatar friend-avatar--squish" width="313" height="294" loading="lazy" decoding="async">
           <h3 class="friend-name friend-name--squish">Squish</h3>
-          <p class="friend-desc">A happy purple cube, always ready for an adventure. Curious, a little silly, and up for whatever Lilyan has planned.</p>
+          <p class="friend-desc">A happy, squishy purple block who loves to learn. He’s a shapeshifter, so with one big POP! he can turn into any shape. Curious, a little silly, and up for whatever Lilyan has planned.</p>
         </div>
         <div class="friend-card friend-card--lilyan">
           <img src="assets/lilyan-mascot.png" alt="Lilyan, a curious little girl in a heart sweater" class="friend-avatar friend-avatar--lilyan" width="500" height="1192" loading="lazy" decoding="async">
@@ -1022,6 +1034,8 @@
 
   <!-- ============ holidays ============ -->
   <section id="holidays" class="holiday-section">
+    <img src="assets/squish-halloween.png" alt="" class="holiday-char holiday-char--squish" width="623" height="520" loading="lazy" decoding="async">
+    <img src="assets/lilyan-christmas.png" alt="" class="holiday-char holiday-char--lilyan" width="446" height="560" loading="lazy" decoding="async">
     <div class="holiday-container">
       <div data-reveal class="holiday-head">
         <span class="eyebrow eyebrow--holiday">Holidays with Squish</span>
@@ -1475,20 +1489,34 @@
       <h2 data-reveal class="faq-heading">Questions parents actually ask</h2>
       <div class="faq-list">
         <div data-reveal class="faq-item">
+          <div class="icon-chip faq-icon-chip"><svg class="icon" aria-hidden="true"><use href="#icon-users"></use></svg></div>
           <h3 class="faq-question">What age is this for?</h3>
           <p class="faq-answer">Ages 1 to 4 across the series. Learning Shapes with Squish leans a little older, but every book is built for read-aloud time starting in toddlerhood.</p>
         </div>
         <div data-reveal class="faq-item">
+          <div class="icon-chip faq-icon-chip"><svg class="icon" aria-hidden="true"><use href="#icon-book-open"></use></svg></div>
           <h3 class="faq-question">How long is each book?</h3>
           <p class="faq-answer">Short on purpose: from 10 rhyming spreads (Habits) to the 40-page Christmas sing-along. Built for a wiggly toddler’s attention span, not a chapter-book sitting.</p>
         </div>
         <div data-reveal class="faq-item">
+          <div class="icon-chip faq-icon-chip"><svg class="icon" aria-hidden="true"><use href="#icon-refresh"></use></svg></div>
           <h3 class="faq-question">Do I need to read them in order?</h3>
           <p class="faq-answer">Nope. Every book stands alone. If you want the official order it’s Habits → Counting → Colors → the Collection bind-up → Shapes → Opposites → ABCs → the Shapeshifter Collection → Trick-or-Treat → Weather → the 12 Days of Christmas. The Coloring and Activity Books fit in anywhere, and Squish and Lilyan will happily meet your kid wherever you start.</p>
         </div>
         <div data-reveal class="faq-item">
+          <div class="icon-chip faq-icon-chip"><svg class="icon" aria-hidden="true"><use href="#icon-note"></use></svg></div>
           <h3 class="faq-question">Is there anything in it for the grown-up reading it?</h3>
           <p class="faq-answer">Yes. Every book ends with a real “Note for Grown-Ups,” with simple tips for reading it together, not just a cute story for your kid.</p>
+        </div>
+        <div data-reveal class="faq-item">
+          <div class="icon-chip faq-icon-chip"><svg class="icon" aria-hidden="true"><use href="#icon-tablet"></use></svg></div>
+          <h3 class="faq-question">Can I get them as ebooks, paperbacks or hardbacks?</h3>
+          <p class="faq-answer">Every book comes in paperback on Amazon, and most also come as a Kindle ebook. Both Collections also come in hardback. The Coloring and Activity Books are paperback only.</p>
+        </div>
+        <div data-reveal class="faq-item">
+          <div class="icon-chip faq-icon-chip"><svg class="icon" aria-hidden="true"><use href="#icon-sparkle"></use></svg></div>
+          <h3 class="faq-question">Who makes the books?</h3>
+          <p class="faq-answer">Wesley Scholl, a Marine veteran and dad in Alexandria, Virginia, writes, plans, designs, lays out and edits every book himself. AI image tools are one part of how the illustrations are made.</p>
         </div>
       </div>
     </div>
@@ -1607,6 +1635,7 @@
           <img src="assets/covers/thumbs/weather.jpg" alt="" class="format-thumb" width="160" height="160" loading="lazy" decoding="async">
           <span class="format-row-title">Learning Weather with Squish</span>
           <div class="format-chips">
+            <a href="https://www.amazon.com/dp/B0HNF99Z2V" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Kindle ebook</a>
             <a href="https://www.amazon.com/dp/B0HNFKHBY1" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $9.99</a>
           </div>
           <span class="format-row-price">From $9.99</span>
@@ -1615,6 +1644,7 @@
           <img src="assets/covers/thumbs/christmas.jpg" alt="" class="format-thumb" width="160" height="160" loading="lazy" decoding="async">
           <span class="format-row-title">Learning the 12 Days of Christmas with Squish</span>
           <div class="format-chips">
+            <a href="https://www.amazon.com/dp/B0HP8RYLTS" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Kindle ebook</a>
             <a href="https://www.amazon.com/dp/B0HPBBKBZ9" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $9.99</a>
           </div>
           <span class="format-row-price">From $9.99</span>
