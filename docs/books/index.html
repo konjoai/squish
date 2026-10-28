@@ -296,13 +296,22 @@
   /* ============ holidays ============ */
   .holiday-section { position: relative; overflow: hidden; background: linear-gradient(180deg,#2A2D5C 0%,#1C1A40 100%); padding: 100px 0 240px; color: #FDF4E4; }
   .holiday-container { position: relative; z-index: 1; }
-  .holiday-char { position: absolute; z-index: 0; height: auto; pointer-events: none; filter: drop-shadow(0 10px 18px rgba(0,0,0,.35)); }
-  .holiday-char--squish { top: 18px; left: max(8px, calc(50% - 640px)); width: 220px; transform: rotate(-6deg); }
-  .holiday-char--lilyan { bottom: 0; right: max(8px, calc(50% - 640px)); width: 170px; }
-  @media (max-width: 860px) {
-    .holiday-section { padding: 150px 0 210px; }
-    .holiday-char--squish { top: 10px; left: 50%; width: 150px; transform: translateX(-50%) rotate(-4deg); }
-    .holiday-char--lilyan { right: 50%; width: 140px; transform: translateX(50%); }
+  .holiday-chars { position: absolute; z-index: 0; display: flex; align-items: flex-end; gap: 4px; pointer-events: none; filter: drop-shadow(0 10px 18px rgba(0,0,0,.35)); }
+  .holiday-char-img { display: block; height: auto; }
+  .holiday-char-img--squish { width: 150px; }
+  .holiday-char-img--lilyan { width: 112px; }
+  .holiday-chars--bottom .holiday-char-img--squish { margin-left: -18px; }
+  .holiday-chars--top { top: 14px; left: max(12px, calc(50% - 640px)); }
+  .holiday-chars--bottom { bottom: 14px; right: max(12px, calc(50% - 640px)); }
+  @media (max-width: 1100px) {
+    .holiday-section { padding: 230px 0 250px; }
+    .holiday-chars--top { left: 50%; transform: translateX(-50%); }
+    .holiday-chars--bottom { right: 50%; transform: translateX(50%); }
+  }
+  @media (max-width: 560px) {
+    .holiday-char-img--squish { width: 130px; }
+    .holiday-char-img--lilyan { width: 98px; }
+    .holiday-section { padding: 190px 0 210px; }
   }
   .holiday-container { max-width: 1160px; margin: 0 auto; padding: 0 28px; }
   .holiday-head { text-align: center; margin-bottom: 40px; }
@@ -1034,8 +1043,14 @@
 
   <!-- ============ holidays ============ -->
   <section id="holidays" class="holiday-section">
-    <img src="assets/squish-halloween.png" alt="" class="holiday-char holiday-char--squish" width="623" height="520" loading="lazy" decoding="async">
-    <img src="assets/lilyan-christmas.png" alt="" class="holiday-char holiday-char--lilyan" width="446" height="560" loading="lazy" decoding="async">
+    <div class="holiday-chars holiday-chars--top" aria-hidden="true">
+      <img src="assets/squish-halloween.png" alt="" class="holiday-char-img holiday-char-img--squish" width="623" height="520" loading="lazy" decoding="async">
+      <img src="assets/lilyan-halloween.png" alt="" class="holiday-char-img holiday-char-img--lilyan" width="461" height="560" loading="lazy" decoding="async">
+    </div>
+    <div class="holiday-chars holiday-chars--bottom" aria-hidden="true">
+      <img src="assets/lilyan-christmas.png" alt="" class="holiday-char-img holiday-char-img--lilyan" width="446" height="560" loading="lazy" decoding="async">
+      <img src="assets/squish-christmas.png" alt="" class="holiday-char-img holiday-char-img--squish" width="593" height="520" loading="lazy" decoding="async">
+    </div>
     <div class="holiday-container">
       <div data-reveal class="holiday-head">
         <span class="eyebrow eyebrow--holiday">Holidays with Squish</span>
