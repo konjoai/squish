@@ -265,7 +265,10 @@
   .books-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 36px; }
   .books-heading { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: clamp(32px,3.8vw,50px); line-height: 1.02; color: #39205C; margin: 16px 0 0; }
   .books-lead { margin: 0; max-width: 38ch; font-size: 17px; font-weight: 600; color: #6B5580; }
-  .books-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); gap: 22px; }
+  .books-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 22px; }
+  .books-grid > .book-card { flex: 0 1 calc((100% - 44px) / 3); min-width: 0; }
+  @media (max-width: 980px) { .books-grid > .book-card { flex-basis: calc((100% - 22px) / 2); } }
+  @media (max-width: 640px) { .books-grid > .book-card { flex-basis: 100%; } }
   .book-card {
     display: flex; flex-direction: column; background: #fff; border: 3px solid #E6D6FA;
     border-radius: 26px; padding: 18px; box-shadow: 0 14px 30px rgba(123,63,191,.12);
@@ -1044,12 +1047,12 @@
   <!-- ============ holidays ============ -->
   <section id="holidays" class="holiday-section">
     <div class="holiday-chars holiday-chars--top" aria-hidden="true">
-      <img src="assets/lilyan-halloween.png" alt="" class="holiday-char-img holiday-char-img--lilyan" width="461" height="560" loading="lazy" decoding="async">
-      <img src="assets/squish-halloween.png" alt="" class="holiday-char-img holiday-char-img--squish" width="623" height="520" loading="lazy" decoding="async">
+      <img src="assets/lilyan-halloween.png" alt="" class="holiday-char-img holiday-char-img--lilyan" width="374" height="560" loading="lazy" decoding="async">
+      <img src="assets/squish-halloween.png" alt="" class="holiday-char-img holiday-char-img--squish" width="633" height="520" loading="lazy" decoding="async">
     </div>
     <div class="holiday-chars holiday-chars--bottom" aria-hidden="true">
-      <img src="assets/lilyan-christmas.png" alt="" class="holiday-char-img holiday-char-img--lilyan" width="446" height="560" loading="lazy" decoding="async">
-      <img src="assets/squish-christmas.png" alt="" class="holiday-char-img holiday-char-img--squish" width="593" height="520" loading="lazy" decoding="async">
+      <img src="assets/lilyan-christmas.png" alt="" class="holiday-char-img holiday-char-img--lilyan" width="446" height="558" loading="lazy" decoding="async">
+      <img src="assets/squish-christmas.png" alt="" class="holiday-char-img holiday-char-img--squish" width="579" height="520" loading="lazy" decoding="async">
     </div>
     <div class="holiday-container">
       <div data-reveal class="holiday-head">
