@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Learning with Squish: Playful Board Books for Curious Little Learners</title>
+<title>Learning with Squish: Picture Books for Ages 1 to 4</title>
 <meta name="description" content="Learning with Squish is a 13-book series by Konjo Publishing for kids ages 1-4. Meet Squish and Lilyan, get free printable coloring pages, and shop the series." />
 <link rel="icon" type="image/png" href="assets/favicon.png" />
 
@@ -294,7 +294,25 @@
   }
 
   /* ============ holidays ============ */
-  .holiday-section { background: linear-gradient(180deg,#2A2D5C 0%,#1C1A40 100%); padding: 100px 0; color: #FDF4E4; }
+  .holiday-section { position: relative; overflow: hidden; background: linear-gradient(180deg,#2A2D5C 0%,#1C1A40 100%); padding: 100px 0 240px; color: #FDF4E4; }
+  .holiday-container { position: relative; z-index: 1; }
+  .holiday-chars { position: absolute; z-index: 0; display: flex; align-items: flex-end; gap: 4px; pointer-events: none; filter: drop-shadow(0 10px 18px rgba(0,0,0,.35)); }
+  .holiday-char-img { display: block; height: auto; }
+  .holiday-char-img--squish { width: 150px; }
+  .holiday-char-img--lilyan { width: 112px; }
+  .holiday-chars--bottom .holiday-char-img--squish { margin-left: -18px; }
+  .holiday-chars--top { top: 14px; left: max(12px, calc(50% - 640px)); }
+  .holiday-chars--bottom { bottom: 14px; right: max(12px, calc(50% - 640px)); }
+  @media (max-width: 1100px) {
+    .holiday-section { padding: 230px 0 250px; }
+    .holiday-chars--top { left: 50%; transform: translateX(-50%); }
+    .holiday-chars--bottom { right: 50%; transform: translateX(50%); }
+  }
+  @media (max-width: 560px) {
+    .holiday-char-img--squish { width: 130px; }
+    .holiday-char-img--lilyan { width: 98px; }
+    .holiday-section { padding: 190px 0 210px; }
+  }
   .holiday-container { max-width: 1160px; margin: 0 auto; padding: 0 28px; }
   .holiday-head { text-align: center; margin-bottom: 40px; }
   .eyebrow--holiday { background: #FFD34D; color: #34205A; }
@@ -408,7 +426,10 @@
   .faq-container { max-width: 860px; margin: 0 auto; padding: 0 28px; }
   .faq-heading { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: clamp(30px,3.6vw,46px); line-height: 1.04; color: #5A3A16; margin: 0 0 30px; text-align: center; }
   .faq-list { display: flex; flex-direction: column; gap: 12px; }
-  .faq-item { background: #fff; border-radius: 20px; padding: 24px 28px; box-shadow: 0 8px 20px rgba(90,58,22,.08); }
+  .faq-item { display: grid; grid-template-columns: 46px 1fr; column-gap: 16px; align-items: start; background: #fff; border-radius: 20px; padding: 24px 28px; box-shadow: 0 8px 20px rgba(90,58,22,.08); }
+  .faq-icon-chip { grid-row: span 2; width: 46px; height: 46px; background: #F3E8FF; color: #7B3FBF; }
+  .faq-question, .faq-answer { grid-column: 2; }
+  @media (max-width: 560px) { .faq-item { grid-template-columns: 36px 1fr; column-gap: 12px; padding: 20px; } .faq-icon-chip { width: 36px; height: 36px; } }
   .faq-question { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 17.5px; color: #5A2794; margin: 0 0 6px; }
   .faq-answer { margin: 0; font-size: 16px; font-weight: 600; color: #5C4A3C; }
 
@@ -747,10 +768,10 @@
     <div class="marquee-outer">
       <div class="marquee-track" id="quote-marquee">
         <div class="marquee-group">
-          <span>“Why do we brush our teeth?”</span><span class="dot-pink">●</span><span>“Let's Count Again!”</span><span class="dot-cyan">●</span><span>“Circle. Triangle. Star. POP!”</span><span class="dot-yellow">●</span><span>“What shape will Squish be next?”</span><span class="dot-purple">●</span><span>“I want Squish book.”</span><span class="dot-pink">●</span><span>“Knock, knock! Who could it be?”</span><span class="dot-cyan">●</span><span>“What’s the weather like today?”</span><span class="dot-yellow">●</span><span>“Squi-ish gave to me!”</span><span class="dot-purple">●</span>
+          <span>“Why do we brush our teeth?”</span><span class="dot-pink">●</span><span>“Let’s Count Again!”</span><span class="dot-cyan">●</span><span>“Circle. Triangle. Star. POP!”</span><span class="dot-yellow">●</span><span>“What shape will Squish be next?”</span><span class="dot-purple">●</span><span>“I want Squish book.”</span><span class="dot-pink">●</span><span>“Knock, knock! Who could it be?”</span><span class="dot-cyan">●</span><span>“What’s the weather like today?”</span><span class="dot-yellow">●</span><span>“Squi-ish gave to me!”</span><span class="dot-purple">●</span>
         </div>
         <div class="marquee-group" aria-hidden="true">
-          <span>“Why do we brush our teeth?”</span><span class="dot-pink">●</span><span>“Let's Count Again!”</span><span class="dot-cyan">●</span><span>“Circle. Triangle. Star. POP!”</span><span class="dot-yellow">●</span><span>“What shape will Squish be next?”</span><span class="dot-purple">●</span><span>“I want Squish book.”</span><span class="dot-pink">●</span><span>“Knock, knock! Who could it be?”</span><span class="dot-cyan">●</span><span>“What’s the weather like today?”</span><span class="dot-yellow">●</span><span>“Squi-ish gave to me!”</span><span class="dot-purple">●</span>
+          <span>“Why do we brush our teeth?”</span><span class="dot-pink">●</span><span>“Let’s Count Again!”</span><span class="dot-cyan">●</span><span>“Circle. Triangle. Star. POP!”</span><span class="dot-yellow">●</span><span>“What shape will Squish be next?”</span><span class="dot-purple">●</span><span>“I want Squish book.”</span><span class="dot-pink">●</span><span>“Knock, knock! Who could it be?”</span><span class="dot-cyan">●</span><span>“What’s the weather like today?”</span><span class="dot-yellow">●</span><span>“Squi-ish gave to me!”</span><span class="dot-purple">●</span>
         </div>
       </div>
     </div>
@@ -768,7 +789,7 @@
         <div class="friend-card friend-card--squish">
           <img src="assets/squish-mascot.png" alt="Squish, a happy purple cube character" class="friend-avatar friend-avatar--squish" width="313" height="294" loading="lazy" decoding="async">
           <h3 class="friend-name friend-name--squish">Squish</h3>
-          <p class="friend-desc">A happy purple cube, always ready for an adventure. Curious, a little silly, and up for whatever Lilyan has planned.</p>
+          <p class="friend-desc">A happy, squishy purple block who loves to learn. He’s a shapeshifter, so with one big POP! he can turn into any shape. Curious, a little silly, and up for whatever Lilyan has planned.</p>
         </div>
         <div class="friend-card friend-card--lilyan">
           <img src="assets/lilyan-mascot.png" alt="Lilyan, a curious little girl in a heart sweater" class="friend-avatar friend-avatar--lilyan" width="500" height="1192" loading="lazy" decoding="async">
@@ -851,7 +872,7 @@
             <span class="book-badge">Book 4 · The Set</span>
           </div>
           <h3 class="book-title">The Learning with Squish Collection</h3>
-          <p class="book-desc">Three beloved stories (Habits, Counting and Colors) together in one keepsake collection. Ebook, paperback or hardback.</p>
+          <p class="book-desc">Three stories (Habits, Counting and Colors) together in one keepsake collection. Ebook, paperback or hardback.</p>
           <div class="book-meta">
             <span class="book-meta-label">Teaches</span><span>All three</span>
             <span class="book-meta-sep">·</span>
@@ -939,7 +960,7 @@
           <h3 class="book-title">The Learning with Squish Coloring Book</h3>
           <p class="book-desc">Big, simple pages of Squish and Lilyan for little hands to color, made for crayons and first scribbles.</p>
           <div class="book-meta">
-            <span class="book-meta-label">Teaches</span><span>Coloring</span>
+            <span class="book-meta-label">For</span><span>Little hands and first crayons</span>
             <span class="book-meta-sep">·</span>
             <span class="book-meta-label">Format</span><span>Paperback, 8.5 x 11</span>
           </div>
@@ -995,7 +1016,7 @@
             <span class="book-meta-label">Length</span><span>36 pages</span>
           </div>
           <div class="book-footer">
-            <span class="book-price">$9.99</span>
+            <span class="book-price">From $0.99</span>
             <a href="https://www.amazon.com/dp/B0HNFKHBY1" target="_blank" rel="noopener" class="book-buy-btn">Buy on Amazon</a>
           </div>
         </article>
@@ -1012,7 +1033,7 @@
             <span class="book-meta-label">Length</span><span>40 pages</span>
           </div>
           <div class="book-footer">
-            <span class="book-price">$9.99</span>
+            <span class="book-price">From $0.99</span>
             <a href="https://www.amazon.com/dp/B0HPBBKBZ9" target="_blank" rel="noopener" class="book-buy-btn">Buy on Amazon</a>
           </div>
         </article>
@@ -1022,6 +1043,14 @@
 
   <!-- ============ holidays ============ -->
   <section id="holidays" class="holiday-section">
+    <div class="holiday-chars holiday-chars--top" aria-hidden="true">
+      <img src="assets/lilyan-halloween.png" alt="" class="holiday-char-img holiday-char-img--lilyan" width="461" height="560" loading="lazy" decoding="async">
+      <img src="assets/squish-halloween.png" alt="" class="holiday-char-img holiday-char-img--squish" width="623" height="520" loading="lazy" decoding="async">
+    </div>
+    <div class="holiday-chars holiday-chars--bottom" aria-hidden="true">
+      <img src="assets/lilyan-christmas.png" alt="" class="holiday-char-img holiday-char-img--lilyan" width="446" height="560" loading="lazy" decoding="async">
+      <img src="assets/squish-christmas.png" alt="" class="holiday-char-img holiday-char-img--squish" width="593" height="520" loading="lazy" decoding="async">
+    </div>
     <div class="holiday-container">
       <div data-reveal class="holiday-head">
         <span class="eyebrow eyebrow--holiday">Holidays with Squish</span>
@@ -1057,7 +1086,7 @@
   <!-- ============ why families come back ============ -->
   <section class="loyalty">
     <div class="loyalty-container">
-      <h2 data-reveal class="loyalty-heading">Why families keep coming back</h2>
+      <h2 data-reveal class="loyalty-heading">Why little ones ask for Squish again</h2>
       <div class="loyalty-grid">
         <div data-reveal class="loyalty-card">
           <div class="loyalty-top">
@@ -1096,7 +1125,7 @@
     <div class="ideas-container">
       <div data-reveal class="ideas-head">
         <span class="eyebrow eyebrow--amber">What's inside</span>
-        <h2 class="ideas-heading">Fourteen things your toddler gets out of it</h2>
+        <h2 class="ideas-heading">Fourteen things inside the books</h2>
       </div>
       <div class="ideas-grid">
         <div data-reveal class="idea-card">
@@ -1116,7 +1145,7 @@
           </div>
           <div class="idea-content">
             <h3 class="idea-heading">The “Why do we…?” chant</h3>
-            <p class="idea-text">A repeating question-and-answer pattern that sparks curiosity and builds vocabulary.</p>
+            <p class="idea-text">A question-and-answer pattern toddlers love to say along with.</p>
           </div>
         </div>
         <div data-reveal class="idea-card">
@@ -1136,7 +1165,7 @@
           </div>
           <div class="idea-content">
             <h3 class="idea-heading">“Let’s Count Again!”</h3>
-            <p class="idea-text">Four recap spreads built in every five numbers, so counting actually sticks.</p>
+            <p class="idea-text">A recap spread every five numbers, so you count it all again together.</p>
           </div>
         </div>
         <div data-reveal class="idea-card">
@@ -1156,7 +1185,7 @@
           </div>
           <div class="idea-content">
             <h3 class="idea-heading">Lovable animals</h3>
-            <p class="idea-text">Every color is introduced by a character your toddler will want to meet again.</p>
+            <p class="idea-text">Most colors are introduced by an animal friend your toddler will want to meet again.</p>
           </div>
         </div>
         <div data-reveal class="idea-card">
@@ -1185,8 +1214,8 @@
             <div class="icon-chip idea-icon-chip"><svg class="icon" aria-hidden="true"><use href="#icon-note"></use></svg></div>
           </div>
           <div class="idea-content">
-            <h3 class="idea-heading">A Note for Grown-Ups</h3>
-            <p class="idea-text">Every single book ends with real tips for reading it together.</p>
+            <h3 class="idea-heading">Recap pages</h3>
+            <p class="idea-text">The story books end by meeting everyone again, so little ones can point and name them all.</p>
           </div>
         </div>
         <div data-reveal class="idea-card">
@@ -1251,7 +1280,7 @@
       <div data-reveal class="order-head">
         <span class="eyebrow eyebrow--pink">Reading order</span>
         <h2 class="order-heading">Where to start, and where to go next</h2>
-        <p class="order-lead">Every book stands alone, but here's the order Squish and Lilyan's story unfolds.</p>
+        <p class="order-lead">Every book stands alone, but here's the order we suggest.</p>
       </div>
       <div class="order-track" id="order-track">
         <div class="order-rail" aria-hidden="true"></div>
@@ -1291,7 +1320,7 @@
           <div class="order-badge">4</div>
           <div class="order-body">
             <h3 class="order-title">The Learning with Squish Collection</h3>
-            <p class="order-text">Habits, Counting and Colors together in one keepsake bind-up.</p>
+            <p class="order-text">Habits, Counting and Colors together in one keepsake book.</p>
           </div>
           <a href="https://www.amazon.com/dp/B0HFC8SNB6" target="_blank" rel="noopener" class="order-thumb-link" aria-label="Buy The Learning with Squish Collection on Amazon">
             <img src="assets/covers/thumbs/collection.jpg" alt="" class="order-thumb" width="160" height="160" loading="lazy" decoding="async">
@@ -1331,7 +1360,7 @@
           <div class="order-badge">8</div>
           <div class="order-body">
             <h3 class="order-title">The Learning with Squish Shapeshifter Collection</h3>
-            <p class="order-text">Shapes, Opposites and ABCs together in one big book, in paperback or hardback.</p>
+            <p class="order-text">Shapes, Opposites and ABCs together in one big book, in ebook, paperback or hardback.</p>
           </div>
           <a href="https://www.amazon.com/dp/B0HMFGYNF2" target="_blank" rel="noopener" class="order-thumb-link" aria-label="Buy The Learning with Squish Shapeshifter Collection on Amazon">
             <img src="assets/covers/thumbs/shapeshifter-collection.jpg" alt="" class="order-thumb" width="160" height="160" loading="lazy" decoding="async">
@@ -1361,7 +1390,7 @@
           <div class="order-badge">11</div>
           <div class="order-body">
             <h3 class="order-title">Learning to Trick-or-Treat with Squish</h3>
-            <p class="order-text">Squish POPs into a pumpkin, Lilyan learns to trick-or-treat, and you count to ten with friendly Halloween characters.</p>
+            <p class="order-text">Squish POPs into a pumpkin, Lilyan learns to trick-or-treat, and you count the candy from one to ten.</p>
           </div>
           <a href="https://www.amazon.com/dp/B0HN6KVQ1K" target="_blank" rel="noopener" class="order-thumb-link" aria-label="Buy Learning to Trick-or-Treat with Squish on Amazon">
             <img src="assets/covers/thumbs/halloween.jpg" alt="" class="order-thumb" width="160" height="160" loading="lazy" decoding="async">
@@ -1400,8 +1429,8 @@
           <h3 class="audience-card-title">For little ones</h3>
           <ul class="audience-list">
             <li><svg class="icon icon-inline audience-icon" aria-hidden="true"><use href="#icon-chat"></use></svg><span>A repeating “Why do we…?” chant that begs to be said out loud.</span></li>
-            <li><svg class="icon icon-inline audience-icon" aria-hidden="true"><use href="#icon-refresh"></use></svg><span>Recap pages every few spreads, so numbers, colors and shapes stick.</span></li>
-            <li><svg class="icon icon-inline audience-icon" aria-hidden="true"><use href="#icon-shapes"></use></svg><span>A squishy purple best friend who pops into 12 shapes, one POP! at a time.</span></li>
+            <li><svg class="icon icon-inline audience-icon" aria-hidden="true"><use href="#icon-refresh"></use></svg><span>Recap pages every few spreads, so you get to say them all again.</span></li>
+            <li><svg class="icon icon-inline audience-icon" aria-hidden="true"><use href="#icon-shapes"></use></svg><span>Two best friends, and Squish POPs into a new shape on almost every page.</span></li>
             <li><svg class="icon icon-inline audience-icon" aria-hidden="true"><use href="#icon-moon"></use></svg><span>Short enough for one more read before bed.</span></li>
           </ul>
         </div>
@@ -1434,7 +1463,7 @@
           <div class="about-copy">
             <p>Squish wasn't supposed to be a children's book character. He started as a mascot for a completely different project, until my daughter saw an early version of him on my screen and loved him immediately.</p>
             <p>So I kept refining the character, and started making up stories about him and her, playing together. She asked for them again and again (<em>“I want Squish book”</em>) until one Father's Day, I turned one into a real book for her shelf. She still pulls it down and hands it to me herself.</p>
-            <p>That's still what these books are: a character who comes back, and a story worth asking for twice.</p>
+            <p>That's still what these books are: two friends who come back, and a story worth asking for twice.</p>
           </div>
         </div>
         <div class="about-stats" id="stats-grid">
@@ -1475,20 +1504,34 @@
       <h2 data-reveal class="faq-heading">Questions parents actually ask</h2>
       <div class="faq-list">
         <div data-reveal class="faq-item">
+          <div class="icon-chip faq-icon-chip"><svg class="icon" aria-hidden="true"><use href="#icon-users"></use></svg></div>
           <h3 class="faq-question">What age is this for?</h3>
           <p class="faq-answer">Ages 1 to 4 across the series. Learning Shapes with Squish leans a little older, but every book is built for read-aloud time starting in toddlerhood.</p>
         </div>
         <div data-reveal class="faq-item">
+          <div class="icon-chip faq-icon-chip"><svg class="icon" aria-hidden="true"><use href="#icon-book-open"></use></svg></div>
           <h3 class="faq-question">How long is each book?</h3>
-          <p class="faq-answer">Short on purpose: from 10 rhyming spreads (Habits) to the 40-page Christmas sing-along. Built for a wiggly toddler’s attention span, not a chapter-book sitting.</p>
+          <p class="faq-answer">The story books are short on purpose: from 10 spreads (Habits) to 40 pages (Christmas), built for a wiggly toddler’s attention span. The Collections and the Activity Book are bigger.</p>
         </div>
         <div data-reveal class="faq-item">
+          <div class="icon-chip faq-icon-chip"><svg class="icon" aria-hidden="true"><use href="#icon-refresh"></use></svg></div>
           <h3 class="faq-question">Do I need to read them in order?</h3>
-          <p class="faq-answer">Nope. Every book stands alone. If you want the official order it’s Habits → Counting → Colors → the Collection bind-up → Shapes → Opposites → ABCs → the Shapeshifter Collection → Trick-or-Treat → Weather → the 12 Days of Christmas. The Coloring and Activity Books fit in anywhere, and Squish and Lilyan will happily meet your kid wherever you start.</p>
+          <p class="faq-answer">Nope. Every book stands alone. If you want the official order it’s Habits → Counting → Colors → the Collection → Shapes → Opposites → ABCs → the Shapeshifter Collection → Trick-or-Treat → Weather → the 12 Days of Christmas. The Coloring and Activity Books fit in anywhere, and Squish and Lilyan will happily meet your kid wherever you start.</p>
         </div>
         <div data-reveal class="faq-item">
+          <div class="icon-chip faq-icon-chip"><svg class="icon" aria-hidden="true"><use href="#icon-note"></use></svg></div>
           <h3 class="faq-question">Is there anything in it for the grown-up reading it?</h3>
           <p class="faq-answer">Yes. Every book ends with a real “Note for Grown-Ups,” with simple tips for reading it together, not just a cute story for your kid.</p>
+        </div>
+        <div data-reveal class="faq-item">
+          <div class="icon-chip faq-icon-chip"><svg class="icon" aria-hidden="true"><use href="#icon-tablet"></use></svg></div>
+          <h3 class="faq-question">Can I get them as ebooks, paperbacks or hardbacks?</h3>
+          <p class="faq-answer">Every book comes in paperback on Amazon, and most also come as a Kindle ebook. Both Collections also come in hardback. The Coloring and Activity Books are paperback only.</p>
+        </div>
+        <div data-reveal class="faq-item">
+          <div class="icon-chip faq-icon-chip"><svg class="icon" aria-hidden="true"><use href="#icon-sparkle"></use></svg></div>
+          <h3 class="faq-question">Who makes the books?</h3>
+          <p class="faq-answer">Wesley Scholl, a Marine veteran in Alexandria, Virginia, and Lily’s dad. Lilyan, the little girl in every book, is his daughter, and he reads her every draft before it’s published. He writes, plans, designs, lays out and edits every book himself. AI image tools are one part of how the illustrations are made.</p>
         </div>
       </div>
     </div>
@@ -1607,21 +1650,23 @@
           <img src="assets/covers/thumbs/weather.jpg" alt="" class="format-thumb" width="160" height="160" loading="lazy" decoding="async">
           <span class="format-row-title">Learning Weather with Squish</span>
           <div class="format-chips">
+            <a href="https://www.amazon.com/dp/B0HNF99Z2V" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $0.99</a>
             <a href="https://www.amazon.com/dp/B0HNFKHBY1" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $9.99</a>
           </div>
-          <span class="format-row-price">From $9.99</span>
+          <span class="format-row-price">From $0.99</span>
         </div>
         <div data-reveal class="format-row">
           <img src="assets/covers/thumbs/christmas.jpg" alt="" class="format-thumb" width="160" height="160" loading="lazy" decoding="async">
           <span class="format-row-title">Learning the 12 Days of Christmas with Squish</span>
           <div class="format-chips">
+            <a href="https://www.amazon.com/dp/B0HP8RYLTS" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $0.99</a>
             <a href="https://www.amazon.com/dp/B0HPBBKBZ9" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $9.99</a>
           </div>
-          <span class="format-row-price">From $9.99</span>
+          <span class="format-row-price">From $0.99</span>
         </div>
       </div>
       <div data-reveal class="formats-note">
-        Reading together at bedtime? Every book ends with a <strong>Note for Grown-Ups</strong>, and Learning Shapes with Squish has a QR code inside linking to free printable coloring pages, the same ones you can grab below.
+        Reading together at bedtime? Every book ends with a <strong>Note for Grown-Ups</strong>, and several books end with a QR code linking to free printable coloring pages, the same ones you can grab below.
       </div>
     </div>
   </section>
