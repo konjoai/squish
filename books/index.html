@@ -468,6 +468,28 @@
   .audience-icon { color: #2C56A8; margin-top: 1px; }
 
   /* ============ about + stats ============ */
+  /* ---------- polish pass (Oct 30) ---------- */
+  .faq-section .side-mascot { display: none; }
+  .book-formats { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .book-formats .format-chip { font-size: 13px; padding: 7px 12px; }
+  .friends { background: linear-gradient(180deg,#FFF6EC 0%,#F6EEFF 100%); }
+  .friend-card { position: relative; padding: 30px 24px 26px; }
+  .friend-card--squish { background: linear-gradient(180deg,#F6EEFF 0%,#fff 60%); }
+  .friend-card--lilyan { background: linear-gradient(180deg,#FFF0F6 0%,#fff 60%); }
+  .friend-avatar--squish { width: 132px !important; height: auto !important; }
+  .friend-avatar--lilyan { width: auto !important; height: 150px !important; }
+  .friend-says { display: inline-block; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 15px;
+    padding: 5px 14px; border-radius: 999px; margin: 10px 0 8px; }
+  .friend-says--squish { background: #7B3FBF; color: #fff; }
+  .friend-says--lilyan { background: #D94F8B; color: #fff; }
+  .audience-card { border-top: 8px solid #2C56A8; }
+  .audience-card:nth-child(2) { border-top-color: #7B3FBF; }
+  .audience-card:nth-child(2) .audience-card-title { color: #7B3FBF; }
+  .audience-icon { background: #EAF1FF; border-radius: 10px; padding: 6px; box-sizing: content-box; }
+  @media (min-width: 900px) {
+    .faq-container { max-width: 1060px !important; }
+    .faq-list { display: grid !important; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+  }
   .press-section { background: #FFF6E5; padding: 90px 0; }
   .press-container { max-width: 900px; margin: 0 auto; padding: 0 28px; text-align: center; }
   .press-heading { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: clamp(30px,3.6vw,46px); line-height: 1.05; color: #39205C; margin: 16px 0 28px; }
@@ -904,6 +926,27 @@
     </div>
   </section>
 
+  <!-- ============ PRESS ============ -->
+  <section id="press" class="press-section">
+    <div class="press-container">
+      <div data-reveal>
+        <span class="eyebrow eyebrow--amber">In the news</span>
+        <h2 class="press-heading">As seen on ABC7 Good Morning Washington</h2>
+      </div>
+      <a data-reveal class="press-card" href="https://wjla.com/good-morning-washington/chapter-chats/alexandria-dads-learning-with-squish-books-turn-lessons-with-daughter-into-a-series" target="_blank" rel="noopener">
+        <img src="assets/abc7-chapter-chats.jpg" alt="Wesley Scholl on the Chapter Chats set of ABC7 Good Morning Washington" class="press-photo" width="1400" height="766" loading="lazy" decoding="async">
+        <div class="press-body">
+        <div>
+          <span class="press-meta">Chapter Chats &middot; October 29, 2026</span>
+          <h3 class="press-title">Alexandria dad&rsquo;s &lsquo;Learning with Squish&rsquo; books turn lessons with daughter into a series</h3>
+          <p class="press-copy">Wesley and Lilyan visited the Good Morning Washington studio to share how a bedtime story for one little girl grew into a 13-book series, including the new Halloween book.</p>
+          <span class="press-link">Watch the segment on WJLA.com &rarr;</span>
+        </div>
+        </div>
+      </a>
+    </div>
+  </section>
+
   <!-- ============ meet the friends ============ -->
   <section class="friends">
     <div class="friends-grid">
@@ -915,11 +958,13 @@
       <div data-reveal class="friends-cards">
         <div class="friend-card friend-card--squish">
           <img src="assets/squish-mascot.png" alt="Squish, a happy purple cube character" class="friend-avatar friend-avatar--squish" width="313" height="294" loading="lazy" decoding="async">
+          <span class="friend-says friend-says--squish">“POP!”</span>
           <h3 class="friend-name friend-name--squish">Squish</h3>
           <p class="friend-desc">A happy, squishy purple block who loves to learn. He’s a shapeshifter, so with one big POP! he can turn into any shape. Curious, a little silly, and up for whatever Lilyan has planned.</p>
         </div>
         <div class="friend-card friend-card--lilyan">
           <img src="assets/lilyan-mascot.png" alt="Lilyan, a curious little girl in a heart sweater" class="friend-avatar friend-avatar--lilyan" width="500" height="1192" loading="lazy" decoding="async">
+          <span class="friend-says friend-says--lilyan">“Why do we…?”</span>
           <h3 class="friend-name friend-name--lilyan">Lilyan</h3>
           <p class="friend-desc">Curious, brave, and always asking why. She notices everything, and she's not afraid to ask Squish about it.</p>
         </div>
@@ -935,7 +980,7 @@
           <span class="eyebrow eyebrow--violet">The series</span>
           <h2 class="books-heading">Thirteen books, two best friends</h2>
         </div>
-        <p class="books-lead">Every book stands on its own. Together they're the whole Learning with Squish world.</p>
+        <p class="books-lead">Every book stands on its own. Tap a format to buy it on Amazon: ebook, paperback, or hardback for the two Collections. Prices are Amazon list prices; Amazon sometimes discounts them.</p>
       </div>
 
       <div class="books-grid">
@@ -953,7 +998,10 @@
           </div>
           <div class="book-footer">
             <span class="book-price">From $0.99</span>
-            <a href="https://www.amazon.com/dp/B0HCX5RLW6" target="_blank" rel="noopener" class="book-buy-btn">Buy on Amazon</a>
+          </div>
+          <div class="book-formats">
+            <a href="https://www.amazon.com/dp/B0HCX5FVPT" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $0.99</a>
+            <a href="https://www.amazon.com/dp/B0HCX5RLW6" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $9.99</a>
           </div>
         </article>
 
@@ -971,7 +1019,10 @@
           </div>
           <div class="book-footer">
             <span class="book-price">From $0.99</span>
-            <a href="https://www.amazon.com/dp/B0HDN4JZZV" target="_blank" rel="noopener" class="book-buy-btn">Buy on Amazon</a>
+          </div>
+          <div class="book-formats">
+            <a href="https://www.amazon.com/dp/B0HDMJN7XK" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $0.99</a>
+            <a href="https://www.amazon.com/dp/B0HDN4JZZV" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $10.99</a>
           </div>
         </article>
 
@@ -989,7 +1040,10 @@
           </div>
           <div class="book-footer">
             <span class="book-price">From $0.99</span>
-            <a href="https://www.amazon.com/dp/B0HDYP2P3T" target="_blank" rel="noopener" class="book-buy-btn">Buy on Amazon</a>
+          </div>
+          <div class="book-formats">
+            <a href="https://www.amazon.com/dp/B0HDVLVFW1" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $0.99</a>
+            <a href="https://www.amazon.com/dp/B0HDYP2P3T" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $10.99</a>
           </div>
         </article>
 
@@ -1007,7 +1061,11 @@
           </div>
           <div class="book-footer">
             <span class="book-price">From $9.99</span>
-            <a href="https://www.amazon.com/dp/B0HFC8SNB6" target="_blank" rel="noopener" class="book-buy-btn">Buy on Amazon</a>
+          </div>
+          <div class="book-formats">
+            <a href="https://www.amazon.com/dp/B0HDS8W7MG" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $9.99</a>
+            <a href="https://www.amazon.com/dp/B0HFC8SNB6" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $19.99</a>
+            <a href="https://www.amazon.com/dp/B0HFCXZJ9W" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book-stack"></use></svg>Hardback $29.99</a>
           </div>
         </article>
 
@@ -1025,7 +1083,10 @@
           </div>
           <div class="book-footer">
             <span class="book-price">From $0.99</span>
-            <a href="https://www.amazon.com/dp/B0HHJW1W4W" target="_blank" rel="noopener" class="book-buy-btn">Buy on Amazon</a>
+          </div>
+          <div class="book-formats">
+            <a href="https://www.amazon.com/dp/B0HHBSH96X" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $0.99</a>
+            <a href="https://www.amazon.com/dp/B0HHJW1W4W" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $10.99</a>
           </div>
         </article>
         <article data-reveal class="book-card">
@@ -1042,7 +1103,10 @@
           </div>
           <div class="book-footer">
             <span class="book-price">From $0.99</span>
-            <a href="https://www.amazon.com/dp/B0HJSPP81V" target="_blank" rel="noopener" class="book-buy-btn">Buy on Amazon</a>
+          </div>
+          <div class="book-formats">
+            <a href="https://www.amazon.com/dp/B0HJRLC6RK" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $0.99</a>
+            <a href="https://www.amazon.com/dp/B0HJSPP81V" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $10.99</a>
           </div>
         </article>
         <article data-reveal class="book-card">
@@ -1059,7 +1123,10 @@
           </div>
           <div class="book-footer">
             <span class="book-price">From $0.99</span>
-            <a href="https://www.amazon.com/dp/B0HLVYYDW8" target="_blank" rel="noopener" class="book-buy-btn">Buy on Amazon</a>
+          </div>
+          <div class="book-formats">
+            <a href="https://www.amazon.com/dp/B0HLTVNZBP" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $0.99</a>
+            <a href="https://www.amazon.com/dp/B0HLVYYDW8" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $9.99</a>
           </div>
         </article>
         <article data-reveal class="book-card">
@@ -1076,7 +1143,11 @@
           </div>
           <div class="book-footer">
             <span class="book-price">From $9.99</span>
-            <a href="https://www.amazon.com/dp/B0HMFGYNF2" target="_blank" rel="noopener" class="book-buy-btn">Buy on Amazon</a>
+          </div>
+          <div class="book-formats">
+            <a href="https://www.amazon.com/dp/B0HM1YJTH6" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $9.99</a>
+            <a href="https://www.amazon.com/dp/B0HMFGYNF2" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $19.99</a>
+            <a href="https://www.amazon.com/dp/B0HM7DNPMV" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book-stack"></use></svg>Hardback $29.99</a>
           </div>
         </article>
         <article data-reveal class="book-card">
@@ -1093,7 +1164,9 @@
           </div>
           <div class="book-footer">
             <span class="book-price">$9.99</span>
-            <a href="https://www.amazon.com/dp/B0HN3F1HX6" target="_blank" rel="noopener" class="book-buy-btn">Buy on Amazon</a>
+          </div>
+          <div class="book-formats">
+            <a href="https://www.amazon.com/dp/B0HN3F1HX6" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $9.99</a>
           </div>
         </article>
         <article data-reveal class="book-card">
@@ -1110,7 +1183,9 @@
           </div>
           <div class="book-footer">
             <span class="book-price">$9.99</span>
-            <a href="https://www.amazon.com/dp/B0HN3K8938" target="_blank" rel="noopener" class="book-buy-btn">Buy on Amazon</a>
+          </div>
+          <div class="book-formats">
+            <a href="https://www.amazon.com/dp/B0HN3K8938" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $9.99</a>
           </div>
         </article>
         <article data-reveal class="book-card">
@@ -1127,7 +1202,10 @@
           </div>
           <div class="book-footer">
             <span class="book-price">From $0.99</span>
-            <a href="https://www.amazon.com/dp/B0HN6KVQ1K" target="_blank" rel="noopener" class="book-buy-btn">Buy on Amazon</a>
+          </div>
+          <div class="book-formats">
+            <a href="https://www.amazon.com/dp/B0HN6KVQ1K" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $0.99</a>
+            <a href="https://www.amazon.com/dp/B0HNFQP9B6" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $9.99</a>
           </div>
         </article>
         <article data-reveal class="book-card">
@@ -1144,7 +1222,10 @@
           </div>
           <div class="book-footer">
             <span class="book-price">From $0.99</span>
-            <a href="https://www.amazon.com/dp/B0HNFKHBY1" target="_blank" rel="noopener" class="book-buy-btn">Buy on Amazon</a>
+          </div>
+          <div class="book-formats">
+            <a href="https://www.amazon.com/dp/B0HNF99Z2V" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $0.99</a>
+            <a href="https://www.amazon.com/dp/B0HNFKHBY1" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $9.99</a>
           </div>
         </article>
         <article data-reveal class="book-card">
@@ -1161,7 +1242,10 @@
           </div>
           <div class="book-footer">
             <span class="book-price">From $0.99</span>
-            <a href="https://www.amazon.com/dp/B0HPBBKBZ9" target="_blank" rel="noopener" class="book-buy-btn">Buy on Amazon</a>
+          </div>
+          <div class="book-formats">
+            <a href="https://www.amazon.com/dp/B0HP8RYLTS" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $0.99</a>
+            <a href="https://www.amazon.com/dp/B0HPBBKBZ9" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $9.99</a>
           </div>
         </article>
       </div>
@@ -1189,7 +1273,7 @@
           <img src="assets/covers/halloween.jpg" alt="Learning to Trick-or-Treat with Squish cover" class="holiday-cover" width="900" height="900" loading="lazy" decoding="async">
           <span class="holiday-tag">Halloween</span>
           <h3 class="holiday-title">Learning to Trick-or-Treat with Squish</h3>
-          <p class="holiday-text">Knock, say “Trick or treat!”, say “Thank you!” and count the candy from one to ten. Every costume is friendly and just pretend.</p>
+          <p class="holiday-text">Knock, say “Trick or treat!”, say “Thank you!” and count the Halloween friends from one to ten. Every costume is friendly and just pretend.</p>
           <span class="holiday-cta">Buy on Amazon</span>
         </a>
         <a data-reveal class="holiday-card" href="https://www.amazon.com/dp/B0HPBBKBZ9" target="_blank" rel="noopener">
@@ -1206,43 +1290,6 @@
           <p class="holiday-text">Squish and Lilyan are getting ready for an Easter egg hunt. Join the Squish List to hear the day it’s ready.</p>
           <span class="holiday-cta">Join the Squish List</span>
         </a>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============ why families come back ============ -->
-  <section class="loyalty">
-    <div class="loyalty-container">
-      <h2 data-reveal class="loyalty-heading">Why little ones ask for Squish again</h2>
-      <div class="loyalty-grid">
-        <div data-reveal class="loyalty-card">
-          <div class="loyalty-top">
-            <div class="loyalty-number">1</div>
-            <div class="icon-chip loyalty-icon-chip"><svg class="icon" aria-hidden="true"><use href="#icon-users"></use></svg></div>
-          </div>
-          <div class="loyalty-content"><p class="loyalty-text">Characters who come back in every book</p></div>
-        </div>
-        <div data-reveal class="loyalty-card">
-          <div class="loyalty-top">
-            <div class="loyalty-number">2</div>
-            <div class="icon-chip loyalty-icon-chip"><svg class="icon" aria-hidden="true"><use href="#icon-message"></use></svg></div>
-          </div>
-          <div class="loyalty-content"><p class="loyalty-text">Simple language for short attention spans</p></div>
-        </div>
-        <div data-reveal class="loyalty-card">
-          <div class="loyalty-top">
-            <div class="loyalty-number">3</div>
-            <div class="icon-chip loyalty-icon-chip"><svg class="icon" aria-hidden="true"><use href="#icon-note"></use></svg></div>
-          </div>
-          <div class="loyalty-content"><p class="loyalty-text">A Note for Grown-Ups at the end of every story</p></div>
-        </div>
-        <div data-reveal class="loyalty-card">
-          <div class="loyalty-top">
-            <div class="loyalty-number">4</div>
-            <div class="icon-chip loyalty-icon-chip"><svg class="icon" aria-hidden="true"><use href="#icon-sparkle"></use></svg></div>
-          </div>
-          <div class="loyalty-content"><p class="loyalty-text">New titles added to the series regularly</p></div>
-        </div>
       </div>
     </div>
   </section>
@@ -1517,7 +1564,7 @@
           <div class="order-badge">11</div>
           <div class="order-body">
             <h3 class="order-title">Learning to Trick-or-Treat with Squish</h3>
-            <p class="order-text">Squish POPs into a pumpkin, Lilyan learns to trick-or-treat, and you count the candy from one to ten.</p>
+            <p class="order-text">Squish POPs into a pumpkin, Lilyan learns to trick-or-treat, and you count the Halloween friends from one to ten.</p>
           </div>
           <a href="https://www.amazon.com/dp/B0HN6KVQ1K" target="_blank" rel="noopener" class="order-thumb-link" aria-label="Buy Learning to Trick-or-Treat with Squish on Amazon">
             <img src="assets/covers/thumbs/halloween.jpg" alt="" class="order-thumb" width="160" height="160" loading="lazy" decoding="async">
@@ -1623,27 +1670,6 @@
     </div>
   </section>
 
-  <!-- ============ PRESS ============ -->
-  <section id="press" class="press-section">
-    <div class="press-container">
-      <div data-reveal>
-        <span class="eyebrow eyebrow--amber">In the news</span>
-        <h2 class="press-heading">As seen on ABC7 Good Morning Washington</h2>
-      </div>
-      <a data-reveal class="press-card" href="https://wjla.com/good-morning-washington/chapter-chats/alexandria-dads-learning-with-squish-books-turn-lessons-with-daughter-into-a-series" target="_blank" rel="noopener">
-        <img src="assets/abc7-chapter-chats.jpg" alt="Wesley Scholl on the Chapter Chats set of ABC7 Good Morning Washington" class="press-photo" width="1400" height="766" loading="lazy" decoding="async">
-        <div class="press-body">
-        <div>
-          <span class="press-meta">Chapter Chats &middot; October 29, 2026</span>
-          <h3 class="press-title">Alexandria dad&rsquo;s &lsquo;Learning with Squish&rsquo; books turn lessons with daughter into a series</h3>
-          <p class="press-copy">Wesley and Lilyan visited the Good Morning Washington studio to share how a bedtime story for one little girl grew into a 13-book series, including the new Halloween book.</p>
-          <span class="press-link">Watch the segment on WJLA.com &rarr;</span>
-        </div>
-        </div>
-      </a>
-    </div>
-  </section>
-
   <!-- ============ FAQ ============ -->
   <section class="faq-section">
     <img src="assets/squish-mascot.png" alt="" class="side-mascot side-mascot--left" width="313" height="294">
@@ -1681,140 +1707,6 @@
           <h3 class="faq-question">Who makes the books?</h3>
           <p class="faq-answer">Wesley Scholl, a Marine veteran in Alexandria, Virginia, and Lily’s dad. Lilyan, the little girl in every book, is his daughter, and he reads her every draft before it’s published. He writes, plans, designs, lays out and edits every book himself. AI image tools are one part of how the illustrations are made.</p>
         </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============ formats ============ -->
-  <section class="formats-section">
-    <img src="assets/lilyan-mascot.png" alt="" class="side-mascot side-mascot--left" width="500" height="1192">
-    <img src="assets/squish-mascot.png" alt="" class="side-mascot side-mascot--right" width="313" height="294">
-    <div class="formats-container">
-      <div data-reveal class="formats-head">
-        <h2 class="formats-heading">Ebooks, paperbacks and hardbacks</h2>
-        <p class="formats-lead">Both Collections also come in hardback. Prices are Amazon list prices; Amazon sometimes discounts them.</p>
-      </div>
-      <div class="format-list">
-        <div data-reveal class="format-row">
-          <img src="assets/covers/thumbs/habits.jpg" alt="" class="format-thumb" width="160" height="160" loading="lazy" decoding="async">
-          <span class="format-row-title">Learning Good Habits with Squish</span>
-          <div class="format-chips">
-            <a href="https://www.amazon.com/dp/B0HCX5FVPT" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $0.99</a>
-            <a href="https://www.amazon.com/dp/B0HCX5RLW6" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $9.99</a>
-          </div>
-          <span class="format-row-price">From $0.99</span>
-        </div>
-        <div data-reveal class="format-row">
-          <img src="assets/covers/thumbs/counting.jpg" alt="" class="format-thumb" width="160" height="160" loading="lazy" decoding="async">
-          <span class="format-row-title">Learning to Count with Squish</span>
-          <div class="format-chips">
-            <a href="https://www.amazon.com/dp/B0HDMJN7XK" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $0.99</a>
-            <a href="https://www.amazon.com/dp/B0HDN4JZZV" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $10.99</a>
-          </div>
-          <span class="format-row-price">From $0.99</span>
-        </div>
-        <div data-reveal class="format-row">
-          <img src="assets/covers/thumbs/colors.jpg" alt="" class="format-thumb" width="160" height="160" loading="lazy" decoding="async">
-          <span class="format-row-title">Learning Colors with Squish</span>
-          <div class="format-chips">
-            <a href="https://www.amazon.com/dp/B0HDVLVFW1" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $0.99</a>
-            <a href="https://www.amazon.com/dp/B0HDYP2P3T" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $10.99</a>
-          </div>
-          <span class="format-row-price">From $0.99</span>
-        </div>
-        <div data-reveal class="format-row">
-          <img src="assets/covers/thumbs/collection.jpg" alt="" class="format-thumb" width="160" height="160" loading="lazy" decoding="async">
-          <span class="format-row-title">The Learning with Squish Collection</span>
-          <div class="format-chips">
-            <a href="https://www.amazon.com/dp/B0HDS8W7MG" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $9.99</a>
-            <a href="https://www.amazon.com/dp/B0HFC8SNB6" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $19.99</a>
-            <a href="https://www.amazon.com/dp/B0HFCXZJ9W" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book-stack"></use></svg>Hardback $29.99</a>
-          </div>
-          <span class="format-row-price">From $9.99</span>
-        </div>
-        <div data-reveal class="format-row">
-          <img src="assets/covers/thumbs/shapes.jpg" alt="" class="format-thumb" width="160" height="160" loading="lazy" decoding="async">
-          <span class="format-row-title">Learning Shapes with Squish</span>
-          <div class="format-chips">
-            <a href="https://www.amazon.com/dp/B0HHBSH96X" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $0.99</a>
-            <a href="https://www.amazon.com/dp/B0HHJW1W4W" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $10.99</a>
-          </div>
-          <span class="format-row-price">From $0.99</span>
-        </div>
-        <div data-reveal class="format-row">
-          <img src="assets/covers/thumbs/opposites.jpg" alt="" class="format-thumb" width="160" height="160" loading="lazy" decoding="async">
-          <span class="format-row-title">Learning Opposites with Squish</span>
-          <div class="format-chips">
-            <a href="https://www.amazon.com/dp/B0HJRLC6RK" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $0.99</a>
-            <a href="https://www.amazon.com/dp/B0HJSPP81V" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $10.99</a>
-          </div>
-          <span class="format-row-price">From $0.99</span>
-        </div>
-        <div data-reveal class="format-row">
-          <img src="assets/covers/thumbs/abcs.jpg" alt="" class="format-thumb" width="160" height="160" loading="lazy" decoding="async">
-          <span class="format-row-title">Learning ABCs with Squish</span>
-          <div class="format-chips">
-            <a href="https://www.amazon.com/dp/B0HLTVNZBP" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $0.99</a>
-            <a href="https://www.amazon.com/dp/B0HLVYYDW8" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $9.99</a>
-          </div>
-          <span class="format-row-price">From $0.99</span>
-        </div>
-        <div data-reveal class="format-row">
-          <img src="assets/covers/thumbs/shapeshifter-collection.jpg" alt="" class="format-thumb" width="160" height="160" loading="lazy" decoding="async">
-          <span class="format-row-title">The Learning with Squish Shapeshifter Collection</span>
-          <div class="format-chips">
-            <a href="https://www.amazon.com/dp/B0HM1YJTH6" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $9.99</a>
-            <a href="https://www.amazon.com/dp/B0HMFGYNF2" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $19.99</a>
-            <a href="https://www.amazon.com/dp/B0HM7DNPMV" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book-stack"></use></svg>Hardback $29.99</a>
-          </div>
-          <span class="format-row-price">From $9.99</span>
-        </div>
-        <div data-reveal class="format-row">
-          <img src="assets/covers/thumbs/coloring.jpg" alt="" class="format-thumb" width="160" height="160" loading="lazy" decoding="async">
-          <span class="format-row-title">The Learning with Squish Coloring Book</span>
-          <div class="format-chips">
-            <a href="https://www.amazon.com/dp/B0HN3F1HX6" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $9.99</a>
-          </div>
-          <span class="format-row-price">From $9.99</span>
-        </div>
-        <div data-reveal class="format-row">
-          <img src="assets/covers/thumbs/activity.jpg" alt="" class="format-thumb" width="160" height="160" loading="lazy" decoding="async">
-          <span class="format-row-title">The Learning with Squish Activity Book</span>
-          <div class="format-chips">
-            <a href="https://www.amazon.com/dp/B0HN3K8938" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $9.99</a>
-          </div>
-          <span class="format-row-price">From $9.99</span>
-        </div>
-        <div data-reveal class="format-row">
-          <img src="assets/covers/thumbs/halloween.jpg" alt="" class="format-thumb" width="160" height="160" loading="lazy" decoding="async">
-          <span class="format-row-title">Learning to Trick-or-Treat with Squish</span>
-          <div class="format-chips">
-            <a href="https://www.amazon.com/dp/B0HN6KVQ1K" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $0.99</a>
-            <a href="https://www.amazon.com/dp/B0HNFQP9B6" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $9.99</a>
-          </div>
-          <span class="format-row-price">From $0.99</span>
-        </div>
-        <div data-reveal class="format-row">
-          <img src="assets/covers/thumbs/weather.jpg" alt="" class="format-thumb" width="160" height="160" loading="lazy" decoding="async">
-          <span class="format-row-title">Learning Weather with Squish</span>
-          <div class="format-chips">
-            <a href="https://www.amazon.com/dp/B0HNF99Z2V" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $0.99</a>
-            <a href="https://www.amazon.com/dp/B0HNFKHBY1" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $9.99</a>
-          </div>
-          <span class="format-row-price">From $0.99</span>
-        </div>
-        <div data-reveal class="format-row">
-          <img src="assets/covers/thumbs/christmas.jpg" alt="" class="format-thumb" width="160" height="160" loading="lazy" decoding="async">
-          <span class="format-row-title">Learning the 12 Days of Christmas with Squish</span>
-          <div class="format-chips">
-            <a href="https://www.amazon.com/dp/B0HP8RYLTS" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-tablet"></use></svg>Ebook $0.99</a>
-            <a href="https://www.amazon.com/dp/B0HPBBKBZ9" target="_blank" rel="noopener" class="format-chip"><svg class="icon icon-inline" aria-hidden="true"><use href="#icon-book"></use></svg>Paperback $9.99</a>
-          </div>
-          <span class="format-row-price">From $0.99</span>
-        </div>
-      </div>
-      <div data-reveal class="formats-note">
-        Reading together at bedtime? Every book ends with a <strong>Note for Grown-Ups</strong>, and several books end with a QR code linking to free printable coloring pages, the same ones you can grab below.
       </div>
     </div>
   </section>
