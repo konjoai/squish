@@ -403,16 +403,15 @@
   .press-section { background: #FFF6E5; padding: 90px 0; }
   .press-container { max-width: 900px; margin: 0 auto; padding: 0 28px; text-align: center; }
   .press-heading { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: clamp(30px,3.6vw,46px); line-height: 1.05; color: #39205C; margin: 16px 0 28px; }
-  .press-card { display: flex; gap: 26px; align-items: center; text-align: left; background: #fff; border-radius: 28px; padding: clamp(24px,3.5vw,40px); box-shadow: 0 18px 40px rgba(138,90,0,.12); text-decoration: none; color: inherit; transition: transform .2s ease, box-shadow .2s ease; }
+  .press-photo { display: block; width: 100%; height: auto; border-radius: 20px; margin-bottom: 22px; }
+  .press-body { display: flex; gap: 26px; align-items: center; }
+  .press-card { display: block; text-align: left; background: #fff; border-radius: 28px; padding: clamp(24px,3.5vw,40px); box-shadow: 0 18px 40px rgba(138,90,0,.12); text-decoration: none; color: inherit; transition: transform .2s ease, box-shadow .2s ease; }
   .press-card:hover { transform: translateY(-3px); box-shadow: 0 24px 48px rgba(138,90,0,.18); }
-  .press-badge { flex: 0 0 auto; width: 96px; height: 96px; border-radius: 24px; background: #1F3A73; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: 'Baloo 2', sans-serif; font-weight: 800; line-height: 1; }
-  .press-badge-big { font-size: 30px; }
-  .press-badge-small { font-size: 11px; letter-spacing: .1em; margin-top: 6px; }
   .press-meta { font-weight: 700; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #8A5A00; }
   .press-title { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: clamp(20px,2.2vw,26px); line-height: 1.15; color: #39205C; margin: 6px 0 8px; }
   .press-copy { font-size: 16px; font-weight: 600; color: #4A3B52; margin: 0 0 12px; }
   .press-link { font-weight: 800; color: #7B3FBF; }
-  @media (max-width: 600px) { .press-card { flex-direction: column; text-align: center; } }
+  @media (max-width: 600px) { .press-body { flex-direction: column; text-align: center; } }
   .about-section { background: #F4EAFF; padding: 105px 0; }
   .about-container { max-width: 1060px; margin: 0 auto; padding: 0 28px; }
   .about-card {
@@ -1530,12 +1529,14 @@
         <h2 class="press-heading">As seen on ABC7 Good Morning Washington</h2>
       </div>
       <a data-reveal class="press-card" href="https://wjla.com/good-morning-washington/chapter-chats/alexandria-dads-learning-with-squish-books-turn-lessons-with-daughter-into-a-series" target="_blank" rel="noopener">
-        <div class="press-badge" aria-hidden="true"><span class="press-badge-big">ABC7</span><span class="press-badge-small">WJLA</span></div>
+        <img src="assets/abc7-chapter-chats.jpg" alt="Wesley Scholl on the Chapter Chats set of ABC7 Good Morning Washington" class="press-photo" width="1400" height="766" loading="lazy" decoding="async">
+        <div class="press-body">
         <div>
           <span class="press-meta">Chapter Chats &middot; October 29, 2026</span>
           <h3 class="press-title">Alexandria dad&rsquo;s &lsquo;Learning with Squish&rsquo; books turn lessons with daughter into a series</h3>
           <p class="press-copy">Wesley and Lilyan visited the Good Morning Washington studio to share how a bedtime story for one little girl grew into a 13-book series, including the new Halloween book.</p>
-          <span class="press-link">Read the story on WJLA.com &rarr;</span>
+          <span class="press-link">Watch the segment on WJLA.com &rarr;</span>
+        </div>
         </div>
       </a>
     </div>
