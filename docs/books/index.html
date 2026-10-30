@@ -512,6 +512,8 @@
   .printable-link { display: inline-block; margin-top: 8px; color: #2A7A5E; text-decoration: underline; }
   .form-error { margin: 14px 0 0; font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 15px; color: #B3261E; }
   .privacy-note { margin: 16px 0 0; font-size: 13px; font-weight: 600; color: #6B5580; }
+  .printables-optin { display: flex; gap: 10px; align-items: flex-start; text-align: left; margin: 12px auto 4px; max-width: 420px; font-size: 14px; font-weight: 600; color: #5B4470; cursor: pointer; }
+  .printables-optin input { margin-top: 3px; width: 18px; height: 18px; flex: 0 0 auto; accent-color: #7B3FC4; }
 
   /* ============ final CTA + footer ============ */
   .site-footer { background: #39205C; color: #D8C7EE; padding: 70px 28px 50px; text-align: center; }
@@ -1694,6 +1696,11 @@
           <label class="email-form-label" for="email-input">Email address</label>
           <input type="email" id="email-input" name="email" required placeholder="you@example.com" autocomplete="email" aria-describedby="email-error" class="email-input">
           <input type="hidden" id="src-input" name="src" value="">
+          <input type="text" id="printables-website" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">
+          <label class="printables-optin">
+            <input type="checkbox" id="printables-optin">
+            <span>Also add me to the Squish List (about one email a month: new books, printables and local storytimes). I'm a grown-up.</span>
+          </label>
           <button type="submit" class="submit-btn" id="submit-button">Send me the printables</button>
         </form>
 
@@ -1913,6 +1920,36 @@
     var form = document.getElementById("subscribe-form");
     var emailInput = document.getElementById("email-input");
     var submitButton = document.getElementById("submit-button");
+    var optInInput = document.getElementById("printables-optin");
+    var honeypotInput = document.getElementById("printables-website");
+    // Same Google Apps Script web app as subscribe/index.html (Squish Subscribers sheet).
+    // It emails the coloring pages to the visitor. Empty = fall back to formsubmit.co.
+    var SHEET_ENDPOINT = "https://script.google.com/macros/s/AKfycbxqoJqZ8XiZ5y785j-FrOdQO3_JOtBi8zBR8ZiPrtskLzzwtipWLAi57LU75yA5hLvG9A/exec";
+
+    function sendPrintablesSignup(payload) {
+      if (SHEET_ENDPOINT) {
+        // text/plain avoids a CORS preflight, which Apps Script cannot answer.
+        return fetch(SHEET_ENDPOINT, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) })
+          .then(function (r) { if (!r.ok) { throw new Error("status " + r.status); } return r.json(); })
+          .then(function (d) {
+            // An older deployment of the script rejects printables-only requests;
+            // route those through formsubmit.co so nobody gets an error.
+            if (d && d.error === "no_consent") { return sendViaFormsubmit(payload); }
+            if (!d || d.ok !== true) { throw new Error("sheet endpoint: " + (d && d.error)); }
+          });
+      }
+      return sendViaFormsubmit(payload);
+    }
+
+    function sendViaFormsubmit(payload) {
+      return fetch("https://formsubmit.co/ajax/wesleyscholl@gmail.com", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ email: payload.email, src: payload.src, optin: payload.consent, _subject: "New Learning with Squish signup", _captcha: "false", _honey: payload.website })
+      })
+        .then(function (r) { if (!r.ok) { throw new Error("status " + r.status); } return r.json(); })
+        .then(function (d) { if (!d || d.success !== "true") { throw new Error("formsubmit: " + (d && d.message)); } });
+    }
     var errorEl = document.getElementById("email-error");
     var successEl = document.getElementById("form-success");
 
@@ -1949,30 +1986,19 @@
       submitButton.disabled = true;
       submitButton.textContent = "Sending...";
 
-      fetch("https://formsubmit.co/ajax/wesleyscholl@gmail.com", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Accept": "application/json" },
-        body: JSON.stringify({
-          email: email,
-          src: srcInput.value || "(none)",
-          _subject: "New Learning with Squish signup",
-          _captcha: "false"
-        })
+      sendPrintablesSignup({
+        email: email,
+        src: srcInput.value || "printables",
+        page: window.location.href,
+        consent: optInInput ? optInInput.checked : false,
+        purpose: "printables",
+        website: honeypotInput ? honeypotInput.value : ""
       })
-        .then(function (response) {
-          if (!response.ok) {
-            throw new Error("Subscribe request failed with status " + response.status);
-          }
-          return response.json();
-        })
-        .then(function (data) {
-          if (!data || data.success !== "true") {
-            throw new Error("formsubmit.co reported failure: " + (data && data.message));
-          }
+        .then(function () {
           showSuccess();
         })
         .catch(function (err) {
-          console.error("[squish.run/books] formsubmit.co request failed:", err);
+          console.error("[squish.run/books] printables signup failed:", err);
           showError("Something went wrong. Please try again in a moment.");
         })
         .finally(function () {

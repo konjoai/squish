@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Leave a review | Learning with Squish</title>
+<meta name="description" content="Read a Learning with Squish book? Leave an honest Amazon review for the title you read." />
+<link rel="icon" type="image/png" href="../assets/favicon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; font-family: 'Nunito', sans-serif; color: #3B2352; line-height: 1.5;
+    background: linear-gradient(135deg, #FFF3D6 0%, #F3E6FF 45%, #E0F0FF 100%);
+    display: flex; flex-direction: column;
+  }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 20px; max-width: 980px; width: 100%; margin: 0 auto; }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: #4B2D6F; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 18px; }
+  .brand img { width: 36px; height: 36px; object-fit: contain; }
+  .back { font-weight: 800; color: #5A2794; text-decoration: none; font-size: 15px; }
+  main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 16px 16px 48px; }
+  .card {
+    width: 100%; max-width: 520px; background: #fff; border-radius: 28px; padding: 32px 26px 28px;
+    box-shadow: 0 18px 40px rgba(90,39,148,.16); border: 3px solid #E6D6FA; text-align: center;
+  }
+  .mascot { width: 110px; height: auto; margin: -78px auto 6px; display: block; }
+  h1 { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: clamp(30px, 6vw, 40px); line-height: 1.05; color: #39205C; margin: 0 0 10px; }
+  .lead { margin: 0 0 18px; font-weight: 700; color: #6B5580; font-size: 16px; }
+  ul.perks { list-style: none; padding: 0; margin: 0 0 22px; text-align: left; display: grid; gap: 8px; }
+  ul.perks li { font-weight: 700; font-size: 15px; color: #4B2D6F; padding-left: 28px; position: relative; }
+  ul.perks li::before { content: ""; position: absolute; left: 4px; top: 6px; width: 12px; height: 12px; border-radius: 4px; background: #8B5FBF; }
+  form { display: grid; gap: 12px; text-align: left; }
+  label.field { display: grid; gap: 6px; font-weight: 800; font-size: 14px; color: #4B2D6F; }
+  input[type=text], input[type=email] {
+    width: 100%; font-family: 'Nunito', sans-serif; font-size: 16px; font-weight: 600; padding: 14px 16px;
+    border-radius: 14px; border: 3px solid rgba(75,45,111,.2); background: #fff; color: #3B2352;
+  }
+  input:focus-visible { outline: 3px solid #5A2794; outline-offset: 2px; }
+  .consent { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; font-weight: 700; color: #4B2D6F; }
+  .consent input { width: 20px; height: 20px; margin-top: 1px; flex: none; accent-color: #5A2794; }
+  .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+  button {
+    font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 18px; color: #3B1F5C; background: #FFD34D;
+    border: none; padding: 15px 24px; border-radius: 14px; box-shadow: 0 6px 0 #E0AB00; cursor: pointer; margin-top: 4px;
+  }
+  button:disabled { opacity: .7; cursor: default; }
+  .error { margin: 12px 0 0; font-weight: 800; color: #B3261E; }
+  .success { margin: 6px 0 0; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 20px; color: #2A7A5E; }
+  .success a { color: #5A2794; }
+  .fine { margin: 16px 0 0; font-size: 13px; font-weight: 600; color: #6B5580; }
+  footer { text-align: center; padding: 18px 16px 28px; font-size: 13px; color: #6B5580; }
+  footer a { color: #5A2794; font-weight: 800; }
+
+  .links { display: grid; gap: 12px; margin: 6px 0 0; }
+  .links a { display: block; text-decoration: none; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 18px;
+    color: #3B1F5C; background: #fff; border: 3px solid #E6D6FA; border-radius: 16px; padding: 14px 16px; box-shadow: 0 5px 0 #E6D6FA; }
+  .links a.hot { background: #FFD34D; border-color: #FFD34D; box-shadow: 0 5px 0 #E0AB00; }
+  .links a small { display: block; font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 13px; color: #6B5580; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 14px; margin: 8px 0 0; text-align: center; }
+  .grid a { text-decoration: none; color: #3B1F5C; font-weight: 800; font-size: 13px; line-height: 1.25; }
+  .grid img { width: 100%; height: auto; border-radius: 14px; border: 3px solid #E6D6FA; display: block; margin: 0 auto 6px; background: #fff; }
+  .grid span.cta { display: inline-block; margin-top: 4px; background: #FFD34D; border-radius: 10px; padding: 4px 10px; font-family: 'Baloo 2', sans-serif; }
+  .card.wide { max-width: 760px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="../"><img src="../assets/favicon.png" alt="" width="36" height="36">Learning with Squish</a>
+  <a class="back" href="../#books">See the books</a>
+</header>
+<main>
+  <div class="card wide">
+    <img class="mascot" src="../assets/squish-mascot-hello.png" alt="" width="500" height="500">
+    <h1>Thank you for reading with Squish!</h1>
+    <p class="lead">If you read one of our books with your little one, an honest review on Amazon, of any kind, helps other parents decide if it's right for them. Tap the book you read.</p>
+    <div class="grid">
+      <a href="https://www.amazon.com/review/create-review?asin=B0HPBBKBZ9" target="_blank" rel="noopener"><img src="../assets/covers/christmas.jpg" alt="" loading="lazy" width="300" height="400">Learning the 12 Days of Christmas with Squish<br><span class="cta">Review</span></a>
+      <a href="https://www.amazon.com/review/create-review?asin=B0HN6KVQ1K" target="_blank" rel="noopener"><img src="../assets/covers/halloween.jpg" alt="" loading="lazy" width="300" height="400">Learning to Trick-or-Treat with Squish<br><span class="cta">Review</span></a>
+      <a href="https://www.amazon.com/review/create-review?asin=B0HNFKHBY1" target="_blank" rel="noopener"><img src="../assets/covers/weather.jpg" alt="" loading="lazy" width="300" height="400">Learning Weather with Squish<br><span class="cta">Review</span></a>
+      <a href="https://www.amazon.com/review/create-review?asin=B0HCX5RLW6" target="_blank" rel="noopener"><img src="../assets/covers/habits.jpg" alt="" loading="lazy" width="300" height="400">Learning Good Habits with Squish<br><span class="cta">Review</span></a>
+      <a href="https://www.amazon.com/review/create-review?asin=B0HDN4JZZV" target="_blank" rel="noopener"><img src="../assets/covers/counting.jpg" alt="" loading="lazy" width="300" height="400">Learning to Count with Squish<br><span class="cta">Review</span></a>
+      <a href="https://www.amazon.com/review/create-review?asin=B0HDYP2P3T" target="_blank" rel="noopener"><img src="../assets/covers/colors.jpg" alt="" loading="lazy" width="300" height="400">Learning Colors with Squish<br><span class="cta">Review</span></a>
+      <a href="https://www.amazon.com/review/create-review?asin=B0HHJW1W4W" target="_blank" rel="noopener"><img src="../assets/covers/shapes.jpg" alt="" loading="lazy" width="300" height="400">Learning Shapes with Squish<br><span class="cta">Review</span></a>
+      <a href="https://www.amazon.com/review/create-review?asin=B0HJSPP81V" target="_blank" rel="noopener"><img src="../assets/covers/opposites.jpg" alt="" loading="lazy" width="300" height="400">Learning Opposites with Squish<br><span class="cta">Review</span></a>
+      <a href="https://www.amazon.com/review/create-review?asin=B0HLVYYDW8" target="_blank" rel="noopener"><img src="../assets/covers/abcs.jpg" alt="" loading="lazy" width="300" height="400">Learning ABCs with Squish<br><span class="cta">Review</span></a>
+      <a href="https://www.amazon.com/review/create-review?asin=B0HFC8SNB6" target="_blank" rel="noopener"><img src="../assets/covers/collection.jpg" alt="" loading="lazy" width="300" height="400">The Learning with Squish Collection<br><span class="cta">Review</span></a>
+      <a href="https://www.amazon.com/review/create-review?asin=B0HMFGYNF2" target="_blank" rel="noopener"><img src="../assets/covers/shapeshifter-collection.jpg" alt="" loading="lazy" width="300" height="400">The Learning with Squish Shapeshifter Collection<br><span class="cta">Review</span></a>
+      <a href="https://www.amazon.com/review/create-review?asin=B0HN3F1HX6" target="_blank" rel="noopener"><img src="../assets/covers/coloring.jpg" alt="" loading="lazy" width="300" height="400">The Learning with Squish Coloring Book<br><span class="cta">Review</span></a>
+      <a href="https://www.amazon.com/review/create-review?asin=B0HN3K8938" target="_blank" rel="noopener"><img src="../assets/covers/activity.jpg" alt="" loading="lazy" width="300" height="400">The Learning with Squish Activity Book<br><span class="cta">Review</span></a>
+    </div>
+    <p class="fine">Amazon asks reviewers to have an active account and to share their own honest opinion. Thank you, from Wes, Lilyan and Squish.</p>
+  </div>
+</main>
+<footer>&copy; Konjo Publishing &middot; <a href="../">squish.run/books</a></footer>
+</body>
+</html>
