@@ -6,6 +6,17 @@
 <title>Learning with Squish: Picture Books for Ages 1 to 4</title>
 <meta name="description" content="Learning with Squish is a 13-book series by Konjo Publishing for kids ages 1-4. Meet Squish and Lilyan, get free printable coloring pages, and shop the series." />
 <link rel="icon" type="image/png" href="assets/favicon.png" />
+<script>
+  /* Seasonal front page: show the Halloween hero above the series intro until the free Kindle promo ends
+     (Sat Oct 31, 2026 11:59 PM Pacific). After that the regular hero returns on its own. */
+  (function () {
+    try {
+      var end = Date.UTC(2026, 10, 1, 7, 0, 0);
+      var force = /[?&]season=halloween/.test(location.search);
+      if (force || Date.now() < end) document.documentElement.classList.add("is-halloween");
+    } catch (e) {}
+  })();
+</script>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -155,6 +166,63 @@
   }
 
   /* ============ hero ============ */
+  /* ---------- Seasonal Halloween hero (shown only while html.is-halloween) ----------
+     Night-sky palette taken from the Trick-or-Treat cover: navy #1C1A40 -> purple #5B3F9A,
+     pumpkin orange #FF9A3C, moon cream #FFF4E0, lavender text #D9CCF5. */
+  .hero-halloween { display: none; }
+  html.is-halloween .hero-halloween { display: block; }
+  html.is-halloween #top.hero { margin-top: 0; padding-top: 90px; }
+  html.is-halloween #top.hero::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 140px;
+    background: linear-gradient(180deg,#E4D4FF 0%,rgba(228,212,255,0) 100%); pointer-events: none; }
+  .hero-halloween {
+    position: relative; overflow: hidden; margin-top: -78px; padding: 142px 0 110px;
+    background: linear-gradient(180deg,#1C1A40 0%,#2A2560 38%,#4A3488 72%,#7A5CB8 90%,#E4D4FF 100%);
+    color: #FFF4E0;
+  }
+  .hh-moon { position: absolute; top: 100px; right: 7%; width: 120px; height: 120px; border-radius: 50%;
+    background: radial-gradient(circle at 38% 38%,#FFFBEA 0%,#FFF0BF 55%,#F6DC8E 100%);
+    box-shadow: 0 0 70px 26px rgba(255,240,191,.35); }
+  .hh-star { position: absolute; width: 6px; height: 6px; background: #FFF4E0; border-radius: 50%;
+    box-shadow: 0 0 8px 2px rgba(255,244,224,.6); animation: twink 3.2s ease-in-out infinite; }
+  .hh-leaf { position: absolute; font-size: 26px; animation: floaty 7s ease-in-out infinite; opacity: .9; }
+  .hh-grid { position: relative; max-width: 1160px; margin: 0 auto; padding: 0 28px;
+    display: grid; grid-template-columns: repeat(auto-fit,minmax(340px,1fr)); align-items: center; gap: 48px; }
+  .hh-badge { display: inline-block; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 13px;
+    letter-spacing: .12em; text-transform: uppercase; color: #2B1A4A; background: #FF9A3C; padding: 8px 18px; border-radius: 999px; }
+  .hh-title { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: clamp(42px,5.6vw,78px);
+    line-height: .98; letter-spacing: -.02em; color: #FFF4E0; margin: 20px 0 0; text-wrap: balance;
+    text-shadow: 0 4px 24px rgba(0,0,0,.25); }
+  .hh-title span { color: #FF9A3C; }
+  .hh-sub { margin: 20px 0 0; max-width: 44ch; font-size: clamp(17px,1.5vw,21px); line-height: 1.45; font-weight: 600; color: #D9CCF5; }
+  .hh-free { display: inline-flex; align-items: center; gap: 10px; margin-top: 24px; font-family: 'Baloo 2', sans-serif;
+    font-weight: 800; font-size: 18px; color: #2B1A4A; background: #FFF4E0; padding: 10px 22px; border-radius: 999px; }
+  .hh-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 26px; }
+  .btn-halloween { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 19px; text-decoration: none;
+    color: #2B1A4A; background: #FF9A3C; padding: 18px 34px; border-radius: 999px; display: inline-block;
+    box-shadow: 0 7px 0 #C96A1C, 0 12px 28px rgba(255,154,60,.35); transition: transform .18s ease; }
+  .btn-halloween:hover { transform: translateY(-3px); }
+  .btn-halloween-ghost { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 19px; text-decoration: none;
+    color: #FFF4E0; padding: 18px 32px; border-radius: 999px; display: inline-block;
+    box-shadow: inset 0 0 0 3px rgba(255,244,224,.55); transition: transform .18s ease, background-color .18s ease; }
+  .btn-halloween-ghost:hover { transform: translateY(-3px); background-color: rgba(255,244,224,.12); }
+  .hh-meta { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 26px; font-size: 14px; font-weight: 700; color: #CFC2EE; }
+  .hh-meta a { color: #FFF4E0; }
+  .hh-visual { position: relative; justify-self: center; width: 100%; max-width: 470px; padding: 0 40px 40px; }
+  .hh-cover { border-radius: 28px; overflow: hidden; background: #FFF4E0; padding: 10px;
+    box-shadow: 0 26px 60px rgba(8,6,30,.55), 0 0 60px rgba(255,154,60,.18); transform: rotate(-1.6deg); }
+  .hh-cover img { display: block; width: 100%; height: auto; aspect-ratio: 1/1; object-fit: cover; border-radius: 20px; }
+  .hh-lilyan { position: absolute; width: 130px; height: auto; left: -18px; bottom: -6px;
+    animation: floaty2 7.5s ease-in-out infinite; filter: drop-shadow(0 14px 20px rgba(8,6,30,.5)); }
+  .hh-squish { position: absolute; width: 170px; height: auto; right: -30px; bottom: -14px;
+    animation: floaty 6s ease-in-out infinite; filter: drop-shadow(0 16px 24px rgba(8,6,30,.5)); }
+  /* Header sits over the night sky until the page scrolls, so lighten it there. */
+  html.is-halloween .site-header:not(.is-scrolled) .brand,
+  html.is-halloween .site-header:not(.is-scrolled) .nav-toggle { color: #FFF4E0; }
+  @media (min-width: 861px) {
+    html.is-halloween .site-header:not(.is-scrolled) .nav-link { color: #E9E0FA; }
+  }
+  @media (max-width: 792px) { .hh-visual { order: -1; max-width: 360px; } .hh-moon { width: 70px; height: 70px; top: 90px; }
+    .hh-lilyan { width: 96px; } .hh-squish { width: 124px; } }
   .hero {
     position: relative; overflow: hidden;
     background: linear-gradient(118deg,#FFD9D4 0%,#FFD6EA 22%,#E4D4FF 46%,#CFE3FF 68%,#CDF3E6 86%,#FDF0C8 100%);
@@ -400,6 +468,18 @@
   .audience-icon { color: #2C56A8; margin-top: 1px; }
 
   /* ============ about + stats ============ */
+  .press-section { background: #FFF6E5; padding: 90px 0; }
+  .press-container { max-width: 900px; margin: 0 auto; padding: 0 28px; text-align: center; }
+  .press-heading { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: clamp(30px,3.6vw,46px); line-height: 1.05; color: #39205C; margin: 16px 0 28px; }
+  .press-photo { display: block; width: 100%; height: auto; border-radius: 20px; margin-bottom: 22px; }
+  .press-body { display: flex; gap: 26px; align-items: center; }
+  .press-card { display: block; text-align: left; background: #fff; border-radius: 28px; padding: clamp(24px,3.5vw,40px); box-shadow: 0 18px 40px rgba(138,90,0,.12); text-decoration: none; color: inherit; transition: transform .2s ease, box-shadow .2s ease; }
+  .press-card:hover { transform: translateY(-3px); box-shadow: 0 24px 48px rgba(138,90,0,.18); }
+  .press-meta { font-weight: 700; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #8A5A00; }
+  .press-title { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: clamp(20px,2.2vw,26px); line-height: 1.15; color: #39205C; margin: 6px 0 8px; }
+  .press-copy { font-size: 16px; font-weight: 600; color: #4A3B52; margin: 0 0 12px; }
+  .press-link { font-weight: 800; color: #7B3FBF; }
+  @media (max-width: 600px) { .press-body { flex-direction: column; text-align: center; } }
   .about-section { background: #F4EAFF; padding: 105px 0; }
   .about-container { max-width: 1060px; margin: 0 auto; padding: 0 28px; }
   .about-card {
@@ -744,6 +824,41 @@
 </header>
 
 <main id="top-content">
+
+
+  <!-- ============ Halloween hero (seasonal; hidden after the free promo ends) ============ -->
+  <section class="hero-halloween" aria-label="Free Halloween book">
+    <div class="hh-moon" aria-hidden="true"></div>
+    <span class="hh-star" style="top:150px;left:8%" aria-hidden="true"></span>
+    <span class="hh-star" style="top:220px;left:44%;animation-delay:1s" aria-hidden="true"></span>
+    <span class="hh-star" style="top:120px;left:62%;animation-delay:2s" aria-hidden="true"></span>
+    <span class="hh-star" style="top:90px;left:28%;animation-delay:.6s" aria-hidden="true"></span>
+    <span class="hh-star" style="top:330px;left:52%;animation-delay:1.6s" aria-hidden="true"></span>
+    <span class="hh-star" style="top:260px;right:14%;animation-delay:2.4s" aria-hidden="true"></span>
+    <span class="hh-star" style="top:420px;left:3%;animation-delay:.9s" aria-hidden="true"></span>
+    <span class="hh-leaf" style="top:130px;left:46%;animation-delay:1s" aria-hidden="true">🍂</span>
+    <span class="hh-leaf" style="top:300px;right:3%;animation-delay:2s" aria-hidden="true">🍁</span>
+    <div class="hh-grid">
+      <div>
+        <span class="hh-badge">New for Halloween &middot; Ages 1&ndash;4</span>
+        <h2 class="hh-title">Knock, knock!<br><span>Who&rsquo;s there?</span></h2>
+        <p class="hh-sub">A not-so-spooky counting book for little trick-or-treaters. Knock on doors with Lilyan and Squish, say &ldquo;Trick or treat!&rdquo; and count your Halloween friends from one to ten.</p>
+        <div class="hh-free">🎃 FREE on Kindle through Halloween night</div>
+        <div class="hh-actions">
+          <a href="https://www.amazon.com/dp/B0HN6KVQ1K" target="_blank" rel="noopener" class="btn-halloween">Get it free on Kindle</a>
+          <a href="https://www.amazon.com/dp/B0HNFQP9B6" target="_blank" rel="noopener" class="btn-halloween-ghost">Paperback $9.99</a>
+        </div>
+        <div class="hh-meta"><span>Gentle enough for little ones who feel a little scared</span><a href="#top" style="color:inherit">Book 11 of the Learning with Squish series &darr;</a></div>
+      </div>
+      <div class="hh-visual">
+        <div class="hh-cover">
+          <img src="assets/covers/halloween.jpg" alt="Learning to Trick-or-Treat with Squish: Lilyan in a witch hat waves next to Squish dressed as a purple pumpkin" width="900" height="900">
+        </div>
+        <img src="assets/lilyan-halloween.png" alt="" class="hh-lilyan" width="374" height="560">
+        <img src="assets/squish-halloween.png" alt="" class="hh-squish" width="633" height="520">
+      </div>
+    </div>
+  </section>
 
   <!-- ============ hero ============ -->
   <section id="top" class="hero">
@@ -1508,6 +1623,27 @@
     </div>
   </section>
 
+  <!-- ============ PRESS ============ -->
+  <section id="press" class="press-section">
+    <div class="press-container">
+      <div data-reveal>
+        <span class="eyebrow eyebrow--amber">In the news</span>
+        <h2 class="press-heading">As seen on ABC7 Good Morning Washington</h2>
+      </div>
+      <a data-reveal class="press-card" href="https://wjla.com/good-morning-washington/chapter-chats/alexandria-dads-learning-with-squish-books-turn-lessons-with-daughter-into-a-series" target="_blank" rel="noopener">
+        <img src="assets/abc7-chapter-chats.jpg" alt="Wesley Scholl on the Chapter Chats set of ABC7 Good Morning Washington" class="press-photo" width="1400" height="766" loading="lazy" decoding="async">
+        <div class="press-body">
+        <div>
+          <span class="press-meta">Chapter Chats &middot; October 29, 2026</span>
+          <h3 class="press-title">Alexandria dad&rsquo;s &lsquo;Learning with Squish&rsquo; books turn lessons with daughter into a series</h3>
+          <p class="press-copy">Wesley and Lilyan visited the Good Morning Washington studio to share how a bedtime story for one little girl grew into a 13-book series, including the new Halloween book.</p>
+          <span class="press-link">Watch the segment on WJLA.com &rarr;</span>
+        </div>
+        </div>
+      </a>
+    </div>
+  </section>
+
   <!-- ============ FAQ ============ -->
   <section class="faq-section">
     <img src="assets/squish-mascot.png" alt="" class="side-mascot side-mascot--left" width="313" height="294">
@@ -1822,6 +1958,7 @@
       if (progressBar) progressBar.style.width = pct + "%";
       if (header) {
         var on = window.scrollY > 40;
+        header.classList.toggle("is-scrolled", on);
         header.style.background = on ? "rgba(255,255,255,.94)" : "transparent";
         header.style.boxShadow = on ? "0 4px 18px rgba(123,63,191,.18)" : "none";
         header.style.padding = on ? "12px 0" : "18px 0";
