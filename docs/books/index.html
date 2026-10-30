@@ -166,43 +166,61 @@
   }
 
   /* ============ hero ============ */
-  /* ---------- Seasonal Halloween hero (shown only while html.is-halloween) ---------- */
+  /* ---------- Seasonal Halloween hero (shown only while html.is-halloween) ----------
+     Night-sky palette taken from the Trick-or-Treat cover: navy #1C1A40 -> purple #5B3F9A,
+     pumpkin orange #FF9A3C, moon cream #FFF4E0, lavender text #D9CCF5. */
   .hero-halloween { display: none; }
   html.is-halloween .hero-halloween { display: block; }
   html.is-halloween #top.hero { margin-top: 0; padding-top: 90px; }
+  html.is-halloween #top.hero::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 140px;
+    background: linear-gradient(180deg,#E4D4FF 0%,rgba(228,212,255,0) 100%); pointer-events: none; }
   .hero-halloween {
-    position: relative; overflow: hidden; margin-top: -78px; padding: 142px 0 70px;
-    background: linear-gradient(160deg,#FFE7CF 0%,#FFD3B0 30%,#F3D3F2 62%,#D9C8FF 100%);
+    position: relative; overflow: hidden; margin-top: -78px; padding: 142px 0 110px;
+    background: linear-gradient(180deg,#1C1A40 0%,#2A2560 38%,#4A3488 72%,#7A5CB8 90%,#E4D4FF 100%);
+    color: #FFF4E0;
   }
-  .hh-moon { position: absolute; top: 96px; right: 7%; width: 120px; height: 120px; border-radius: 50%;
-    background: radial-gradient(circle at 38% 38%,#FFF8DD 0%,#FFE9A8 60%,#F8D57A 100%);
-    box-shadow: 0 0 60px 20px rgba(255,233,168,.55); opacity: .9; }
-  .hh-star { position: absolute; width: 10px; height: 10px; background: #fff; border-radius: 50%; animation: twink 3.2s ease-in-out infinite; }
-  .hh-leaf { position: absolute; font-size: 28px; animation: floaty 7s ease-in-out infinite; opacity: .85; }
+  .hh-moon { position: absolute; top: 100px; right: 7%; width: 120px; height: 120px; border-radius: 50%;
+    background: radial-gradient(circle at 38% 38%,#FFFBEA 0%,#FFF0BF 55%,#F6DC8E 100%);
+    box-shadow: 0 0 70px 26px rgba(255,240,191,.35); }
+  .hh-star { position: absolute; width: 6px; height: 6px; background: #FFF4E0; border-radius: 50%;
+    box-shadow: 0 0 8px 2px rgba(255,244,224,.6); animation: twink 3.2s ease-in-out infinite; }
+  .hh-leaf { position: absolute; font-size: 26px; animation: floaty 7s ease-in-out infinite; opacity: .9; }
   .hh-grid { position: relative; max-width: 1160px; margin: 0 auto; padding: 0 28px;
     display: grid; grid-template-columns: repeat(auto-fit,minmax(340px,1fr)); align-items: center; gap: 48px; }
   .hh-badge { display: inline-block; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 13px;
-    letter-spacing: .12em; text-transform: uppercase; color: #fff; background: #E8731A; padding: 8px 18px; border-radius: 999px; }
+    letter-spacing: .12em; text-transform: uppercase; color: #2B1A4A; background: #FF9A3C; padding: 8px 18px; border-radius: 999px; }
   .hh-title { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: clamp(42px,5.6vw,78px);
-    line-height: .98; letter-spacing: -.02em; color: #39205C; margin: 20px 0 0; text-wrap: balance; }
-  .hh-title span { color: #E8731A; }
-  .hh-sub { margin: 20px 0 0; max-width: 44ch; font-size: clamp(17px,1.5vw,21px); line-height: 1.45; font-weight: 600; color: #5B4470; }
+    line-height: .98; letter-spacing: -.02em; color: #FFF4E0; margin: 20px 0 0; text-wrap: balance;
+    text-shadow: 0 4px 24px rgba(0,0,0,.25); }
+  .hh-title span { color: #FF9A3C; }
+  .hh-sub { margin: 20px 0 0; max-width: 44ch; font-size: clamp(17px,1.5vw,21px); line-height: 1.45; font-weight: 600; color: #D9CCF5; }
   .hh-free { display: inline-flex; align-items: center; gap: 10px; margin-top: 24px; font-family: 'Baloo 2', sans-serif;
-    font-weight: 800; font-size: 18px; color: #FFF8EC; background: #2B1A4A; padding: 10px 22px; border-radius: 999px; }
+    font-weight: 800; font-size: 18px; color: #2B1A4A; background: #FFF4E0; padding: 10px 22px; border-radius: 999px; }
   .hh-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 26px; }
   .btn-halloween { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 19px; text-decoration: none;
-    color: #fff; background: #E8731A; padding: 18px 34px; border-radius: 999px; display: inline-block;
-    box-shadow: 0 7px 0 #B8540C, 0 12px 26px rgba(232,115,26,.35); transition: transform .18s ease; }
+    color: #2B1A4A; background: #FF9A3C; padding: 18px 34px; border-radius: 999px; display: inline-block;
+    box-shadow: 0 7px 0 #C96A1C, 0 12px 28px rgba(255,154,60,.35); transition: transform .18s ease; }
   .btn-halloween:hover { transform: translateY(-3px); }
-  .hh-meta { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 26px; font-size: 14px; font-weight: 700; color: #6B5580; }
+  .btn-halloween-ghost { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 19px; text-decoration: none;
+    color: #FFF4E0; padding: 18px 32px; border-radius: 999px; display: inline-block;
+    box-shadow: inset 0 0 0 3px rgba(255,244,224,.55); transition: transform .18s ease, background-color .18s ease; }
+  .btn-halloween-ghost:hover { transform: translateY(-3px); background-color: rgba(255,244,224,.12); }
+  .hh-meta { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 26px; font-size: 14px; font-weight: 700; color: #CFC2EE; }
+  .hh-meta a { color: #FFF4E0; }
   .hh-visual { position: relative; justify-self: center; width: 100%; max-width: 470px; padding: 0 40px 40px; }
-  .hh-cover { border-radius: 28px; overflow: hidden; background: #fff; padding: 10px;
-    box-shadow: 0 26px 50px rgba(57,32,92,.32); transform: rotate(-1.6deg); }
+  .hh-cover { border-radius: 28px; overflow: hidden; background: #FFF4E0; padding: 10px;
+    box-shadow: 0 26px 60px rgba(8,6,30,.55), 0 0 60px rgba(255,154,60,.18); transform: rotate(-1.6deg); }
   .hh-cover img { display: block; width: 100%; height: auto; aspect-ratio: 1/1; object-fit: cover; border-radius: 20px; }
   .hh-lilyan { position: absolute; width: 130px; height: auto; left: -18px; bottom: -6px;
-    animation: floaty2 7.5s ease-in-out infinite; filter: drop-shadow(0 14px 20px rgba(57,32,92,.3)); }
+    animation: floaty2 7.5s ease-in-out infinite; filter: drop-shadow(0 14px 20px rgba(8,6,30,.5)); }
   .hh-squish { position: absolute; width: 170px; height: auto; right: -30px; bottom: -14px;
-    animation: floaty 6s ease-in-out infinite; filter: drop-shadow(0 16px 24px rgba(57,32,92,.35)); }
+    animation: floaty 6s ease-in-out infinite; filter: drop-shadow(0 16px 24px rgba(8,6,30,.5)); }
+  /* Header sits over the night sky until the page scrolls, so lighten it there. */
+  html.is-halloween .site-header:not(.is-scrolled) .brand,
+  html.is-halloween .site-header:not(.is-scrolled) .nav-toggle { color: #FFF4E0; }
+  @media (min-width: 861px) {
+    html.is-halloween .site-header:not(.is-scrolled) .nav-link { color: #E9E0FA; }
+  }
   @media (max-width: 792px) { .hh-visual { order: -1; max-width: 360px; } .hh-moon { width: 70px; height: 70px; top: 90px; }
     .hh-lilyan { width: 96px; } .hh-squish { width: 124px; } }
   .hero {
@@ -814,6 +832,10 @@
     <span class="hh-star" style="top:150px;left:8%" aria-hidden="true"></span>
     <span class="hh-star" style="top:220px;left:44%;animation-delay:1s" aria-hidden="true"></span>
     <span class="hh-star" style="top:120px;left:62%;animation-delay:2s" aria-hidden="true"></span>
+    <span class="hh-star" style="top:90px;left:28%;animation-delay:.6s" aria-hidden="true"></span>
+    <span class="hh-star" style="top:330px;left:52%;animation-delay:1.6s" aria-hidden="true"></span>
+    <span class="hh-star" style="top:260px;right:14%;animation-delay:2.4s" aria-hidden="true"></span>
+    <span class="hh-star" style="top:420px;left:3%;animation-delay:.9s" aria-hidden="true"></span>
     <span class="hh-leaf" style="top:130px;left:46%;animation-delay:1s" aria-hidden="true">🍂</span>
     <span class="hh-leaf" style="top:300px;right:3%;animation-delay:2s" aria-hidden="true">🍁</span>
     <div class="hh-grid">
@@ -824,9 +846,9 @@
         <div class="hh-free">🎃 FREE on Kindle through Halloween night</div>
         <div class="hh-actions">
           <a href="https://www.amazon.com/dp/B0HN6KVQ1K" target="_blank" rel="noopener" class="btn-halloween">Get it free on Kindle</a>
-          <a href="https://www.amazon.com/dp/B0HNFQP9B6" target="_blank" rel="noopener" class="btn-secondary-lg">Paperback $9.99</a>
+          <a href="https://www.amazon.com/dp/B0HNFQP9B6" target="_blank" rel="noopener" class="btn-halloween-ghost">Paperback $9.99</a>
         </div>
-        <div class="hh-meta"><span>Gentle enough for little ones who feel a little scared</span><span>&middot;</span><a href="#top" style="color:inherit">Book 11 of the Learning with Squish series &darr;</a></div>
+        <div class="hh-meta"><span>Gentle enough for little ones who feel a little scared</span><a href="#top" style="color:inherit">Book 11 of the Learning with Squish series &darr;</a></div>
       </div>
       <div class="hh-visual">
         <div class="hh-cover">
@@ -1936,6 +1958,7 @@
       if (progressBar) progressBar.style.width = pct + "%";
       if (header) {
         var on = window.scrollY > 40;
+        header.classList.toggle("is-scrolled", on);
         header.style.background = on ? "rgba(255,255,255,.94)" : "transparent";
         header.style.boxShadow = on ? "0 4px 18px rgba(123,63,191,.18)" : "none";
         header.style.padding = on ? "12px 0" : "18px 0";
