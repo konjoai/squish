@@ -11,7 +11,8 @@
  *   2. Replace the editor contents with this file and click Save.
  *   3. Fill in POSTAL_ADDRESS below (a PO box or mailbox address is fine).
  *      US law (CAN-SPAM) requires a postal address in marketing email. Until it
- *      is filled in, the welcome email is still sent but without the address.
+ *      is filled in, no welcome email is sent; Wes gets a note to send the
+ *      coloring pages by hand instead.
  *   4. Deploy > Manage deployments > Edit (pencil) > Version: New version > Deploy.
  *      Keep "Execute as: Me" and "Who has access: Anyone". The /exec URL stays
  *      the same, so the website does not need to change.
@@ -21,7 +22,8 @@
  * Status values: Subscribed, Printables only, Unsubscribed.
  *
  * Limits: a personal Gmail account can send email to about 100 recipients a day
- * from Apps Script. The script checks the remaining quota before every welcome
+ * from Apps Script, and each sign-up uses 2 (welcome + note to Wes), so about
+ * 45 sign-ups a day before welcomes pause. The script checks the remaining quota before every welcome
  * email. Past roughly 80 to 100 subscribers, move monthly emails to a free email
  * service and keep this sheet as the backup.
  */
@@ -30,6 +32,10 @@ var NOTIFY_EMAIL = "wesleyscholl@gmail.com";
 var SENDER_NAME = "Wes from Learning with Squish";
 var POSTAL_ADDRESS = ""; // e.g. "Konjo Publishing, PO Box 0000, Alexandria, VA 22300"
 var SITE = "https://squish.run/books/";
+// The deployed web app URL (same one as SHEET_ENDPOINT on the website). Used for
+// unsubscribe links, because ScriptApp.getService().getUrl() can return a /dev
+// link or null depending on how the script is run.
+var EXEC_URL = "https://script.google.com/macros/s/AKfycbxqoJqZ8XiZ5y785j-FrOdQO3_JOtBi8zBR8ZiPrtskLzzwtipWLAi57LU75yA5hLvG9A/exec";
 var PRINTABLES_URL = SITE + "downloads/squish-lilyan-coloring-pages.pdf";
 var SHEET_NAME = ""; // empty = first sheet tab
 var EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -76,7 +82,12 @@ function doPost(e) {
         getSheet().getRange(result.row, COL.welcome).setValue(new Date());
       }
     }
-    notifyWes(email, firstName, source, page, result);
+    try {
+      notifyWes(email, firstName, source, page, result);
+    } catch (notifyErr) {
+      // Out of daily email quota: the row is saved, so don't fail the visitor.
+      console.warn("Squish notify skipped: " + notifyErr);
+    }
     return reply({ ok: true });
   } catch (err) {
     console.error("Squish subscribe failed: " + err);
@@ -93,6 +104,12 @@ function doGet(e) {
   var email = String(params.u).trim().toLowerCase();
   if (params.t !== tokenFor(email)) {
     return htmlPage("That unsubscribe link didn't work. Reply to any Squish email and Wes will remove you by hand.");
+  }
+  // Two steps, so email link scanners that open links can't unsubscribe anyone.
+  if (params.confirm !== "1") {
+    var yes = unsubscribeUrl(email) + "&confirm=1";
+    return htmlPage('Unsubscribe <b>' + email.replace(/[<>&"]/g, "") + '</b> from the Squish List?<br><br>' +
+      '<a href="' + yes + '" target="_top" style="display:inline-block;background:#FFD34D;color:#3B1F5C;padding:10px 18px;border-radius:12px;font-weight:bold;text-decoration:none">Yes, unsubscribe me</a>');
   }
   var lock = LockService.getScriptLock();
   lock.waitLock(10000);
@@ -131,7 +148,14 @@ function upsertRow(email, firstName, source, page, consent) {
 }
 
 function sendWelcome(email, firstName, status) {
-  if (MailApp.getRemainingDailyQuota() < 5) {
+  if (!POSTAL_ADDRESS) {
+    MailApp.sendEmail(NOTIFY_EMAIL, "Squish List: welcome email not sent (add POSTAL_ADDRESS)",
+      "Add a postal address to the script so welcome emails can go out. Meanwhile send the coloring pages to " +
+      email + " by hand: " + PRINTABLES_URL);
+    return false;
+  }
+  // Keep a margin: each sign-up also uses one recipient for the note to Wes.
+  if (MailApp.getRemainingDailyQuota() < 10) {
     MailApp.sendEmail(NOTIFY_EMAIL, "Squish List: welcome email skipped (daily quota low)",
       "Send the coloring pages to " + email + " by hand: " + PRINTABLES_URL);
     return false;
@@ -187,7 +211,7 @@ function notifyWes(email, firstName, source, page, result) {
 
 /** Unsubscribe link for an address; use it in every monthly email you send. */
 function unsubscribeUrl(email) {
-  return ScriptApp.getService().getUrl() + "?u=" + encodeURIComponent(email) + "&t=" + tokenFor(email);
+  return EXEC_URL + "?u=" + encodeURIComponent(email) + "&t=" + tokenFor(email);
 }
 
 function tokenFor(email) {
