@@ -3,7 +3,8 @@
  *
  * Receives sign-ups from squish.run/books (the Join the Squish List page and
  * the free printables form), keeps the "Squish Subscribers" Google Sheet up to
- * date, sends each new person a welcome email with the free coloring pages,
+ * date, sends each new person a welcome email with the free coloring pages
+ * (and, for Squish List subscribers, the free story How Squish Met Lilyan),
  * gives every email a working unsubscribe link, and emails Wes on every sign-up.
  *
  * Setup (once):
@@ -31,6 +32,7 @@ var SENDER_NAME = "Wes from Learning with Squish";
 var POSTAL_ADDRESS = ""; // e.g. "Konjo Publishing, PO Box 0000, Alexandria, VA 22300"
 var SITE = "https://squish.run/books/";
 var PRINTABLES_URL = SITE + "downloads/squish-lilyan-coloring-pages.pdf";
+var STORY_URL = SITE + "downloads/how-squish-met-lilyan.pdf";
 var SHEET_NAME = ""; // empty = first sheet tab
 var EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 var HEADERS = ["Timestamp", "First name", "Email", "Source", "Page", "Consent", "Status", "Welcome sent"];
@@ -133,33 +135,45 @@ function upsertRow(email, firstName, source, page, consent) {
 function sendWelcome(email, firstName, status) {
   if (MailApp.getRemainingDailyQuota() < 5) {
     MailApp.sendEmail(NOTIFY_EMAIL, "Squish List: welcome email skipped (daily quota low)",
-      "Send the coloring pages to " + email + " by hand: " + PRINTABLES_URL);
+      "Send the free story and coloring pages to " + email + " by hand: " + STORY_URL + " and " + PRINTABLES_URL);
     return false;
   }
   var hello = firstName ? "Hi " + firstName + "," : "Hi there,";
-  var lines = [
-    hello,
-    "",
-    "Thanks for stopping by Learning with Squish! Here are your free Squish and Lilyan coloring pages:",
-    PRINTABLES_URL,
-    "",
-    status === "Subscribed"
-      ? "You're on the Squish List, so I'll email you about once a month with new books, more free printables and local storytimes."
-      : "That's the only email you'll get from me unless you join the Squish List: " + SITE + "subscribe/",
+  var subscribed = status === "Subscribed";
+  var lines = [hello, ""];
+  if (subscribed) {
+    lines = lines.concat([
+      "Thanks for joining the Squish List! Here is your free story, How Squish Met Lilyan:",
+      STORY_URL,
+      "",
+      "And here are free Squish and Lilyan coloring pages:",
+      PRINTABLES_URL,
+      "",
+      "I'll email you about once a month with new books, free printables and a heads-up when Squish ebooks are free on Amazon."
+    ]);
+  } else {
+    lines = lines.concat([
+      "Thanks for stopping by Learning with Squish! Here are your free Squish and Lilyan coloring pages:",
+      PRINTABLES_URL,
+      "",
+      "That's the only email you'll get from me unless you join the Squish List (it comes with a free Squish story): " + SITE + "subscribe/"
+    ]);
+  }
+  lines = lines.concat([
     "",
     "All the books are here: " + SITE,
     "",
-    "Happy coloring,",
+    subscribed ? "Happy reading," : "Happy coloring,",
     "Wes (and Lilyan and Squish)",
     "",
     "--",
     "Learning with Squish, Konjo Publishing",
     POSTAL_ADDRESS,
     "Unsubscribe anytime: " + unsubscribeUrl(email)
-  ];
+  ]);
   MailApp.sendEmail({
     to: email,
-    subject: "Your free Squish coloring pages",
+    subject: subscribed ? "Your free Squish story is here" : "Your free Squish coloring pages",
     body: lines.join("\n"),
     name: SENDER_NAME,
     replyTo: NOTIFY_EMAIL
