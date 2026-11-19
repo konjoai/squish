@@ -71,8 +71,7 @@
 </head>
 <body>
 <header class="top">
-  <a class="brand" href="../"><img src="../assets/favicon.png" alt="" width="36" height="36">Learning with Squish</a>
-  <a class="back" href="../#books">See the books</a>
+  <div class="brand"><img src="../assets/favicon.png" alt="" width="36" height="36">Learning with Squish</div>
 </header>
 
 <main>
@@ -158,7 +157,7 @@
           var name = nameInput.value.trim();
           successEl.innerHTML = "You're on the Squish List" + (name ? ", " + name.replace(/[<>&"]/g, "") : "") + "!" +
             '<br><a class="download" href="../downloads/how-squish-met-lilyan.pdf" download>Download the free story (PDF)</a>' +
-            '<span class="note">A welcome email is on its way too. <a href="../downloads/squish-lilyan-coloring-pages.pdf">Grab the coloring pages</a></span>';
+            '<span class="note">A welcome email is on its way too. <a href="../downloads/squish-lilyan-coloring-pages.pdf">Grab the coloring pages</a> or <a href="../#books">meet the books</a>.</span>';
           successEl.hidden = false;
         })
         .catch(function (err) {
