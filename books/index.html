@@ -1758,7 +1758,7 @@
           <input type="text" id="printables-website" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">
           <label class="printables-optin">
             <input type="checkbox" id="printables-optin">
-            <span>Also add me to the Squish List (about one email a month: new books, printables and local storytimes). I'm a grown-up.</span>
+            <span>Also add me to the Squish List and send the free story <em>How Squish Met Lilyan</em> (about one email a month). I'm a grown-up.</span>
           </label>
           <button type="submit" class="submit-btn" id="submit-button">Send me the printables</button>
         </form>
@@ -2030,7 +2030,10 @@
       successEl.innerHTML =
         "Thanks! Check your inbox for the coloring pages." +
         '<br><a class="printable-link" href="downloads/squish-lilyan-coloring-pages.pdf" download>' +
-        "Download them now &darr;</a>";
+        "Download them now &darr;</a>" +
+        (document.getElementById("printables-optin").checked
+          ? '<br><a class="printable-link" href="downloads/how-squish-met-lilyan.pdf" download>Download your free story, How Squish Met Lilyan &darr;</a>'
+          : "");
       successEl.hidden = false;
     }
 
