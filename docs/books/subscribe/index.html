@@ -54,8 +54,7 @@
     border-radius: 14px; border: 3px solid rgba(75,45,111,.2); background: #fff; color: #3B2352;
   }
   input:focus-visible { outline: 3px solid #5A2794; outline-offset: 2px; }
-  .consent { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; font-weight: 700; color: #4B2D6F; }
-  .consent input { width: 20px; height: 20px; margin-top: 1px; flex: none; accent-color: #5A2794; }
+  .consent-note { margin: -4px 0 0; font-size: 14px; text-align: center; color: #4B2D6F; }
   .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
   button {
     font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 18px; color: #3B1F5C; background: #FFD34D;
@@ -99,8 +98,8 @@
         <input type="email" id="email" name="email" required autocomplete="email" maxlength="200" placeholder="you@example.com">
       </label>
       <div class="hp" aria-hidden="true"><label for="website">Website</label><input type="text" id="website" name="website" tabindex="-1" autocomplete="off"></div>
-      <label class="consent" for="consent"><input type="checkbox" id="consent" name="consent"> I'm a grown-up (18+) and I'd like emails from Learning with Squish. I can unsubscribe anytime.</label>
       <button type="submit" id="join-button">Send me the free story</button>
+      <p class="consent-note">You'll get the story plus Squish emails. Unsubscribe anytime.</p>
     </form>
     <p class="error" id="join-error" role="alert" hidden></p>
     <p class="success" id="join-success" role="status" hidden></p>
@@ -121,7 +120,6 @@
     var form = document.getElementById("join-form");
     var nameInput = document.getElementById("first-name");
     var emailInput = document.getElementById("email");
-    var consentInput = document.getElementById("consent");
     var websiteInput = document.getElementById("website");
     var button = document.getElementById("join-button");
     var errorEl = document.getElementById("join-error");
@@ -151,7 +149,6 @@
       errorEl.hidden = true;
       var email = emailInput.value.trim();
       if (!EMAIL_PATTERN.test(email)) { showError("Please enter a valid email address."); emailInput.focus(); return; }
-      if (!consentInput.checked) { showError("Please tick the box to confirm you're a grown-up and want the emails."); consentInput.focus(); return; }
 
       button.disabled = true;
       button.textContent = "Joining...";
