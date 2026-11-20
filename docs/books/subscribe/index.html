@@ -44,6 +44,7 @@
   .success .note { display: block; font-family: 'Nunito', sans-serif; font-size: 15px; font-weight: 700; color: #4B2D6F; margin-top: 8px; }
   h1 { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: clamp(30px, 6vw, 40px); line-height: 1.05; color: #39205C; margin: 0 0 10px; }
   .lead { margin: 0 0 18px; font-weight: 700; color: #6B5580; font-size: 16px; }
+  .perks-title { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 18px; color: #3B1F5C; text-align: left; margin: 0 0 8px; }
   ul.perks { list-style: none; padding: 0; margin: 0 0 22px; text-align: left; display: grid; gap: 8px; }
   ul.perks li { font-weight: 700; font-size: 15px; color: #4B2D6F; padding-left: 28px; position: relative; }
   ul.perks li::before { content: ""; position: absolute; left: 4px; top: 6px; width: 12px; height: 12px; border-radius: 4px; background: #8B5FBF; }
@@ -54,8 +55,7 @@
     border-radius: 14px; border: 3px solid rgba(75,45,111,.2); background: #fff; color: #3B2352;
   }
   input:focus-visible { outline: 3px solid #5A2794; outline-offset: 2px; }
-  .consent { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; font-weight: 700; color: #4B2D6F; }
-  .consent input { width: 20px; height: 20px; margin-top: 1px; flex: none; accent-color: #5A2794; }
+  .consent-note { margin: -4px 0 0; font-size: 14px; text-align: center; color: #4B2D6F; }
   .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
   button {
     font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 18px; color: #3B1F5C; background: #FFD34D;
@@ -72,8 +72,7 @@
 </head>
 <body>
 <header class="top">
-  <a class="brand" href="../"><img src="../assets/favicon.png" alt="" width="36" height="36">Learning with Squish</a>
-  <a class="back" href="../#books">See the books</a>
+  <div class="brand"><img src="../assets/favicon.png" alt="" width="36" height="36">Learning with Squish</div>
 </header>
 
 <main>
@@ -83,11 +82,12 @@
       <img class="story-cover" src="../assets/squish-list-story-cover.jpg" alt="The cover of How Squish Met Lilyan: Lilyan kneels by a toy box as Squish pops out to say hello." width="600" height="600" fetchpriority="high">
     </picture>
     <h1>Get a free Squish story</h1>
-    <p class="lead">Join the Squish List and get <em>How Squish Met Lilyan</em>, a 10-page read-aloud story you won't find in any store.</p>
+    <p class="lead">Join the Squish List and get <em>How Squish Met Lilyan</em>, a 10-page mini book you won't find in any store.</p>
+    <h2 class="perks-title">What you get</h2>
     <ul class="perks">
-      <li>The free story as a PDF, right after you sign up</li>
+      <li>Your free Squish mini book (PDF)</li>
       <li>A heads-up when Squish ebooks are free on Amazon</li>
-      <li>New Squish books as soon as they come out</li>
+      <li>Be the first to hear when new Squish books are published</li>
       <li>Free printable coloring pages</li>
     </ul>
 
@@ -99,8 +99,8 @@
         <input type="email" id="email" name="email" required autocomplete="email" maxlength="200" placeholder="you@example.com">
       </label>
       <div class="hp" aria-hidden="true"><label for="website">Website</label><input type="text" id="website" name="website" tabindex="-1" autocomplete="off"></div>
-      <label class="consent" for="consent"><input type="checkbox" id="consent" name="consent"> I'm a grown-up (18+) and I'd like emails from Learning with Squish. I can unsubscribe anytime.</label>
       <button type="submit" id="join-button">Send me the free story</button>
+      <p class="consent-note">You'll get the story plus Squish emails. Unsubscribe anytime.</p>
     </form>
     <p class="error" id="join-error" role="alert" hidden></p>
     <p class="success" id="join-success" role="status" hidden></p>
@@ -121,7 +121,6 @@
     var form = document.getElementById("join-form");
     var nameInput = document.getElementById("first-name");
     var emailInput = document.getElementById("email");
-    var consentInput = document.getElementById("consent");
     var websiteInput = document.getElementById("website");
     var button = document.getElementById("join-button");
     var errorEl = document.getElementById("join-error");
@@ -151,7 +150,6 @@
       errorEl.hidden = true;
       var email = emailInput.value.trim();
       if (!EMAIL_PATTERN.test(email)) { showError("Please enter a valid email address."); emailInput.focus(); return; }
-      if (!consentInput.checked) { showError("Please tick the box to confirm you're a grown-up and want the emails."); consentInput.focus(); return; }
 
       button.disabled = true;
       button.textContent = "Joining...";
@@ -161,7 +159,7 @@
           var name = nameInput.value.trim();
           successEl.innerHTML = "You're on the Squish List" + (name ? ", " + name.replace(/[<>&"]/g, "") : "") + "!" +
             '<br><a class="download" href="../downloads/how-squish-met-lilyan.pdf" download>Download the free story (PDF)</a>' +
-            '<span class="note">A welcome email is on its way too. <a href="../downloads/squish-lilyan-coloring-pages.pdf">Grab the coloring pages</a></span>';
+            '<span class="note">A welcome email is on its way too. <a href="../downloads/squish-lilyan-coloring-pages.pdf">Grab the coloring pages</a> or <a href="../#books">meet the books</a>.</span>';
           successEl.hidden = false;
         })
         .catch(function (err) {
