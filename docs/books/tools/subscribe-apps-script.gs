@@ -18,6 +18,17 @@
  *      the same, so the website does not need to change.
  *   5. Run testSetup() once from the editor and approve the permissions prompt.
  *
+ * Sender.net (the email platform for the Squish List):
+ *   - In Sender: Account settings > API access tokens > Create API token.
+ *   - In Apps Script: Project Settings (gear) > Script properties > Add
+ *     property: name SENDER_TOKEN, value = the token. Never paste the token
+ *     into this file or into GitHub.
+ *   - Fill in SENDER_GROUP_ID below (Subscribers > Groups > Squish List).
+ *   - New Squish List subscribers are then added to that Sender group, which
+ *     starts the Sender welcome automation. Leave SENDER_SENDS_WELCOME false
+ *     until that automation is switched on in Sender; until then this script
+ *     still sends its own welcome email so nobody misses the story.
+ *
  * Sheet columns: Timestamp | First name | Email | Source | Page | Consent | Status | Welcome sent
  * Status values: Subscribed, Printables only, Unsubscribed.
  *
@@ -33,6 +44,8 @@ var POSTAL_ADDRESS = ""; // e.g. "Konjo Publishing, PO Box 0000, Alexandria, VA 
 var SITE = "https://squish.run/books/";
 var PRINTABLES_URL = SITE + "downloads/squish-lilyan-coloring-pages.pdf";
 var STORY_URL = SITE + "downloads/how-squish-met-lilyan.pdf";
+var SENDER_GROUP_ID = ""; // Sender group ID for the Squish List
+var SENDER_SENDS_WELCOME = false; // true once the Sender welcome automation is live
 var SHEET_NAME = ""; // empty = first sheet tab
 var EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 var HEADERS = ["Timestamp", "First name", "Email", "Source", "Page", "Consent", "Status", "Welcome sent"];
@@ -72,7 +85,13 @@ function doPost(e) {
       lock.releaseLock();
     }
 
-    if (result.sendWelcome) {
+    var inSender = false;
+    if (result.status === "Subscribed") {
+      inSender = addToSender(email, firstName);
+    }
+
+    var senderWelcomes = inSender && SENDER_SENDS_WELCOME;
+    if (result.sendWelcome && !senderWelcomes) {
       var sent = sendWelcome(email, firstName, result.status);
       if (sent) {
         getSheet().getRange(result.row, COL.welcome).setValue(new Date());
@@ -84,6 +103,42 @@ function doPost(e) {
     console.error("Squish subscribe failed: " + err);
     return reply({ ok: false, error: "server_error" });
   }
+}
+
+/**
+ * Adds a Squish List subscriber to the Sender group (which starts the Sender
+ * welcome automation). Returns true on success. Never throws: the Google Sheet
+ * stays the master copy, so a Sender failure only logs and alerts Wes.
+ */
+function addToSender(email, firstName) {
+  var token = PropertiesService.getScriptProperties().getProperty("SENDER_TOKEN");
+  if (!token || !SENDER_GROUP_ID) {
+    return false; // Sender not set up yet
+  }
+  try {
+    var res = UrlFetchApp.fetch("https://api.sender.net/v2/subscribers", {
+      method: "post",
+      contentType: "application/json",
+      headers: { Authorization: "Bearer " + token, Accept: "application/json" },
+      payload: JSON.stringify({
+        email: email,
+        firstname: firstName,
+        groups: [SENDER_GROUP_ID],
+        trigger_automation: true
+      }),
+      muteHttpExceptions: true
+    });
+    var code = res.getResponseCode();
+    if (code >= 200 && code < 300) {
+      return true;
+    }
+    console.warn("Sender add failed (" + code + ") for a subscriber: " + res.getContentText().slice(0, 300));
+  } catch (err) {
+    console.warn("Sender add error: " + err);
+  }
+  MailApp.sendEmail(NOTIFY_EMAIL, "Squish List: could not add a subscriber to Sender",
+    "Add " + email + " to the Squish List group in Sender by hand. Check the Apps Script logs for the error.");
+  return false;
 }
 
 /** Unsubscribe link target: ?u=<email>&t=<token>. Also answers health checks. */
