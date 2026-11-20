@@ -513,7 +513,8 @@
   .audience-icon { background: #EAF1FF; border-radius: 10px; padding: 6px; box-sizing: content-box; }
   @media (min-width: 900px) {
     .faq-container { max-width: 1060px !important; }
-    .faq-list { display: grid !important; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+    .faq-list { display: grid !important; grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; gap: 18px; align-items: stretch; }
+    .faq-list .faq-item { height: 100%; box-sizing: border-box; align-content: start; }
   }
   .proof-chip { display: inline-flex; align-items: center; gap: 8px; margin-top: 18px; padding: 8px 16px; border-radius: 999px;
     background: #1F3A73; color: #fff; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 14px; text-decoration: none; }
