@@ -40,11 +40,11 @@
 
 var NOTIFY_EMAIL = "wesleyscholl@gmail.com";
 var SENDER_NAME = "Wes from Learning with Squish";
-var POSTAL_ADDRESS = ""; // e.g. "Konjo Publishing, PO Box 0000, Alexandria, VA 22300"
+var POSTAL_ADDRESS = "Konjo Publishing, 6150 Castletown Way, Alexandria, VA 22310";
 var SITE = "https://squish.run/books/";
 var PRINTABLES_URL = SITE + "downloads/squish-lilyan-coloring-pages.pdf";
 var STORY_URL = SITE + "downloads/how-squish-met-lilyan.pdf";
-var SENDER_GROUP_ID = ""; // Sender group ID for the Squish List
+var SENDER_GROUP_ID = "egGW5G"; // Sender group ID for the Squish List
 var SENDER_SENDS_WELCOME = false; // true once the Sender welcome automation is live
 var SHEET_NAME = ""; // empty = first sheet tab
 var EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
