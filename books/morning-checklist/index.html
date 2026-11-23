@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Free Squish Morning Checklist | Learning with Squish</title>
+<meta name="description" content="A free printable morning checklist with Squish and Lilyan: wake up, get dressed, go potty, wash hands, brush teeth, eat breakfast." />
+<link rel="canonical" href="https://squish.run/books/morning-checklist/" />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="A free Squish morning checklist for your little one" />
+<meta property="og:description" content="Print it, hang it up, and check off each step with Squish." />
+<meta property="og:url" content="https://squish.run/books/morning-checklist/" />
+<meta property="og:image" content="https://squish.run/books/assets/squish-list-og.jpg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="The cover of How Squish Met Lilyan: Lilyan kneels by a toy box as Squish pops out to say hello." />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="icon" type="image/png" href="../assets/favicon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0; min-height: 100vh; font-family: 'Nunito', sans-serif; color: #3B2352; line-height: 1.5;
+    background: linear-gradient(135deg, #FFF3D6 0%, #F3E6FF 45%, #E0F0FF 100%);
+    display: flex; flex-direction: column;
+  }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 20px; max-width: 980px; width: 100%; margin: 0 auto; }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: #4B2D6F; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 18px; }
+  .brand img { width: 36px; height: 36px; object-fit: contain; }
+  .back { font-weight: 800; color: #5A2794; text-decoration: none; font-size: 15px; }
+  main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 16px 16px 48px; }
+  .card {
+    width: 100%; max-width: 520px; background: #fff; border-radius: 28px; padding: 32px 26px 28px;
+    box-shadow: 0 18px 40px rgba(90,39,148,.16); border: 3px solid #E6D6FA; text-align: center;
+  }
+  picture { display: contents; }
+  .story-cover { width: 220px; height: auto; display: block; margin: -96px auto 14px; border-radius: 18px; transform: rotate(-3deg); box-shadow: 0 14px 28px rgba(90,39,148,.28); border: 4px solid #fff; }
+  .card { margin-top: 84px; }
+  .download { display: inline-block; margin: 14px 0 6px; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 18px; color: #3B1F5C; background: #FFD34D; text-decoration: none; padding: 14px 22px; border-radius: 14px; box-shadow: 0 6px 0 #E0AB00; }
+  .download:focus-visible { outline: 3px solid #5A2794; outline-offset: 3px; }
+  .success .note { display: block; font-family: 'Nunito', sans-serif; font-size: 15px; font-weight: 700; color: #4B2D6F; margin-top: 8px; }
+  h1 { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: clamp(30px, 6vw, 40px); line-height: 1.05; color: #39205C; margin: 0 0 10px; }
+  .lead { margin: 0 0 18px; font-weight: 700; color: #6B5580; font-size: 16px; }
+  .perks-title { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 18px; color: #3B1F5C; text-align: left; margin: 0 0 8px; }
+  ul.perks { list-style: none; padding: 0; margin: 0 0 22px; text-align: left; display: grid; gap: 8px; }
+  ul.perks li { font-weight: 700; font-size: 15px; color: #4B2D6F; padding-left: 28px; position: relative; }
+  ul.perks li::before { content: ""; position: absolute; left: 4px; top: 6px; width: 12px; height: 12px; border-radius: 4px; background: #8B5FBF; }
+  form { display: grid; gap: 12px; text-align: left; }
+  label.field { display: grid; gap: 6px; font-weight: 800; font-size: 14px; color: #4B2D6F; }
+  input[type=text], input[type=email] {
+    width: 100%; font-family: 'Nunito', sans-serif; font-size: 16px; font-weight: 600; padding: 14px 16px;
+    border-radius: 14px; border: 3px solid rgba(75,45,111,.2); background: #fff; color: #3B2352;
+  }
+  input:focus-visible { outline: 3px solid #5A2794; outline-offset: 2px; }
+  .consent-note { margin: -4px 0 0; font-size: 14px; text-align: center; color: #4B2D6F; }
+  .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+  button {
+    font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 18px; color: #3B1F5C; background: #FFD34D;
+    border: none; padding: 15px 24px; border-radius: 14px; box-shadow: 0 6px 0 #E0AB00; cursor: pointer; margin-top: 4px;
+  }
+  button:disabled { opacity: .7; cursor: default; }
+  .error { margin: 12px 0 0; font-weight: 800; color: #B3261E; }
+  .success { margin: 6px 0 0; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 20px; color: #2A7A5E; }
+  .success a { color: #5A2794; }
+  .fine { margin: 16px 0 0; font-size: 13px; font-weight: 600; color: #6B5580; }
+  footer { text-align: center; padding: 18px 16px 28px; font-size: 13px; color: #6B5580; }
+  footer a { color: #5A2794; font-weight: 800; }
+
+  .preview { width: 170px; max-width: 80%; display: block; margin: -96px auto 14px; border-radius: 14px; transform: rotate(-2deg); box-shadow: 0 14px 28px rgba(90,39,148,.28); border: 4px solid #fff; }
+  .note-box { background: #F3ECFA; border-radius: 16px; padding: 12px 14px; font-weight: 700; color: #4B2D6F; margin: 0 0 16px; }
+  .book { display: flex; gap: 14px; align-items: center; text-align: left; margin-top: 20px; padding-top: 18px; border-top: 2px dashed #E6D6FA; }
+  .book img { width: 96px; height: 96px; border-radius: 12px; object-fit: cover; }
+  .book a.buy { display: inline-block; margin-top: 6px; font-weight: 800; color: #5A2794; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><img src="../assets/favicon.png" alt="" width="36" height="36">Learning with Squish</div>
+</header>
+<main>
+  <div class="card">
+    <img class="preview" src="../assets/squish-morning-checklist-preview.jpg" alt="The Squish morning checklist: six picture steps from waking up to eating breakfast, with check boxes for each day." width="510" height="660" fetchpriority="high">
+    <h1>Your free morning checklist</h1>
+    <p class="note-box">Signed up for the Squish List? Your free Squish story is on its way. Check your email!</p>
+    <p class="lead">Print it, hang it up, and check off each step with Squish: wake up, get dressed, go potty, wash hands, brush teeth and eat breakfast.</p>
+    <a class="download" id="dl" href="../downloads/squish-morning-checklist.pdf" download>Download the checklist (PDF)</a>
+    <div class="book">
+      <picture><source type="image/webp" srcset="../assets/covers/habits.webp"><img src="../assets/covers/habits.jpg" alt="Learning Good Habits with Squish cover" width="96" height="96" loading="lazy"></picture>
+      <div>
+        <strong>More good habits with Squish</strong><br>
+        The book <em>Learning Good Habits with Squish</em>.<br>
+        <a class="buy" href="https://www.amazon.com/dp/B0HCX5RLW6" target="_blank" rel="noopener">See it on Amazon</a> &middot; <a class="buy" href="../#books">All Squish books</a>
+      </div>
+    </div>
+    <p class="fine">Free for personal home and classroom use. &copy; <span id="year"></span> Konjo Publishing</p>
+  </div>
+</main>
+<footer>&copy; <span id="year2"></span> Konjo Publishing &middot; <a href="../">squish.run/books</a></footer>
+<script>
+  (function () {
+    var y = new Date().getFullYear();
+    document.getElementById("year").textContent = y;
+    document.getElementById("year2").textContent = y;
+  })();
+</script>
+</body>
+</html>
