@@ -92,7 +92,7 @@
     </ul>
 
     <form id="join-form" novalidate>
-      <label class="field" for="first-name">First name
+      <label class="field" for="first-name" id="first-name-field">First name
         <input type="text" id="first-name" name="firstName" autocomplete="given-name" maxlength="80" placeholder="Your first name">
       </label>
       <label class="field" for="email">Email
@@ -125,7 +125,28 @@
     var button = document.getElementById("join-button");
     var errorEl = document.getElementById("join-error");
     var successEl = document.getElementById("join-success");
-    var src = new URLSearchParams(window.location.search).get("src") || "subscribe-page";
+    var params = new URLSearchParams(window.location.search);
+    var src = params.get("src") || "subscribe-page";
+
+    // A/B test: A shows the optional first-name box, B asks for email only.
+    // Each visitor is assigned once at random and keeps that version.
+    // The variant rides on the src tag ("subscribe-page|A"), so the Sheet
+    // records it with no Apps Script change. ?ab=A or ?ab=B forces a version
+    // for checking either one.
+    var AB_KEY = "squish-subscribe-ab";
+    var variant = params.get("ab");
+    if (variant !== "A" && variant !== "B") {
+      try { variant = localStorage.getItem(AB_KEY); } catch (e) { variant = null; }
+      if (variant !== "A" && variant !== "B") {
+        variant = Math.random() < 0.5 ? "A" : "B";
+        try { localStorage.setItem(AB_KEY, variant); } catch (e) { console.warn("[subscribe] could not save A/B variant:", e); }
+      }
+    }
+    if (variant === "B") {
+      document.getElementById("first-name-field").hidden = true;
+      nameInput.value = "";
+    }
+    src = src + "|" + variant;
 
     function showError(msg) { errorEl.textContent = msg; errorEl.hidden = false; }
 
