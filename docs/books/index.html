@@ -532,6 +532,16 @@
   .press-copy { font-size: 16px; font-weight: 600; color: #4A3B52; margin: 0 0 12px; }
   .press-link { font-weight: 800; color: #7B3FBF; }
   @media (max-width: 600px) { .press-body { flex-direction: column; text-align: center; } }
+  .videos-heading { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: clamp(24px,2.8vw,34px); line-height: 1.1; color: #39205C; margin: 56px 0 8px; }
+  .videos-intro { font-size: 16px; font-weight: 600; color: #4A3B52; margin: 0 auto 24px; max-width: 60ch; }
+  .video-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 24px; text-align: left; }
+  .video-card { background: #fff; border-radius: 24px; padding: 16px; box-shadow: 0 18px 40px rgba(138,90,0,.12); }
+  .video-frame { position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 14px; overflow: hidden; background: #1C1A40; }
+  .video-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .video-title { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 19px; line-height: 1.2; color: #39205C; margin: 14px 4px 4px; }
+  .video-credit { font-size: 14px; font-weight: 600; color: #4A3B52; margin: 0 4px 4px; }
+  .video-credit a { color: #7B3FBF; font-weight: 800; }
+  @media (max-width: 700px) { .video-grid { grid-template-columns: 1fr; } }
   .about-section { background: #F4EAFF; padding: 105px 0; }
   .about-container { max-width: 1060px; margin: 0 auto; padding: 0 28px; }
   .about-card {
@@ -975,6 +985,26 @@
         </div>
         </div>
       </a>
+      <div data-reveal>
+        <h3 class="videos-heading">Watch a Squish story read aloud</h3>
+        <p class="videos-intro">Books Beyond Borders read two of our holiday books on YouTube. Press play and read along with your little one.</p>
+      </div>
+      <div class="video-grid" data-reveal>
+        <div class="video-card">
+          <div class="video-frame">
+            <iframe src="https://www.youtube-nocookie.com/embed/4QnUb0982mM" title="Learning to Trick-or-Treat with Squish read aloud by Books Beyond Borders" loading="lazy" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+          </div>
+          <h4 class="video-title">Learning to Trick-or-Treat with Squish</h4>
+          <p class="video-credit">Read aloud by <a href="https://www.youtube.com/@Books-BeyondBorders" target="_blank" rel="noopener">Books Beyond Borders</a> &middot; <a href="https://youtu.be/4QnUb0982mM" target="_blank" rel="noopener">Watch on YouTube</a></p>
+        </div>
+        <div class="video-card">
+          <div class="video-frame">
+            <iframe src="https://www.youtube-nocookie.com/embed/IQfujKpKLQ4" title="Learning to Give Thanks with Squish read aloud by Books Beyond Borders" loading="lazy" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+          </div>
+          <h4 class="video-title">Learning to Give Thanks with Squish</h4>
+          <p class="video-credit">Read aloud by <a href="https://www.youtube.com/@Books-BeyondBorders" target="_blank" rel="noopener">Books Beyond Borders</a> &middot; <a href="https://youtu.be/IQfujKpKLQ4" target="_blank" rel="noopener">Watch on YouTube</a></p>
+        </div>
+      </div>
     </div>
   </section>
 
