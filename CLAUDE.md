@@ -50,15 +50,15 @@ squish compat                                 # backend compatibility check
 
 ## Konjo Quality Framework
 
-Three walls against AI slop — all enforced by CI.
+Three walls against AI slop.
 
 **Wall 1 — Pre-commit** (`bash .konjo/scripts/install-hooks.sh`):
 ruff lint, ruff format, bare-except scan, DRY check, TODO scan. Blocks the commit.
 
-**Wall 2 — CI gate** (`.github/workflows/konjo-gate.yml`):
-Coverage ≥ 80% · mutation survival ≤ 10% · complexity ≤ 15 · file ≤ 500L · zero DRY violations. Blocks the merge.
-The 500L gate is blocking for **new** files; legacy oversized files are grandfathered in
-`.konjo/oversized-allowlist.txt` (split them to remove, don't grow the list).
+**Wall 2 — CI** (`.github/workflows/ci.yml`):
+CI runs only the essential check: the Python test suite on Linux (3.12), skipped for docs-only changes.
+The coverage, mutation, complexity, size and DRY targets are still the standard; run them locally
+(see the `konjo-quality` skill). Legacy oversized files stay listed in `.konjo/oversized-allowlist.txt`.
 
 **Wall 3 — Adversarial review** (local only — disabled in CI):
 `git diff HEAD~1 | python3 .konjo/scripts/konjo_review.py`
